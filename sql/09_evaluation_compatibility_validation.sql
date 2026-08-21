@@ -98,15 +98,72 @@ SELECT 'A4. All 5 pre-existing private helper metrics still present/unchanged in
                ('ELIGIBLE_DELIVERY_COUNT','ON_TIME_DELIVERY_COUNT','SCHEDULE_ADHERENT_COUNT','ELIGIBLE_ORDERED_QTY','ELIGIBLE_FULFILLED_QTY')) = 5,
        'PASS', 'FAIL')
 UNION ALL
-SELECT 'A5. Structure unchanged: 12 tables / 15 relationships / 54 dims / 26 facts / 32 metrics / 15 VQs',
+SELECT 'A5. Structure: 12 tables / 15 relationships / 70 dims (was 54, +16 relationship-key dims) / 26 facts / 32 metrics / 15 VQs',
        IFF(
             (SELECT COUNT(DISTINCT "object_name") FROM TABLE(RESULT_SCAN(LAST_QUERY_ID())) WHERE "object_kind"='TABLE') = 12
         AND (SELECT COUNT(DISTINCT "object_name") FROM TABLE(RESULT_SCAN(LAST_QUERY_ID())) WHERE "object_kind"='RELATIONSHIP') = 15
-        AND (SELECT COUNT(*) FROM TABLE(RESULT_SCAN(LAST_QUERY_ID())) WHERE "object_kind"='DIMENSION' AND "property"='TABLE') = 54
+        AND (SELECT COUNT(*) FROM TABLE(RESULT_SCAN(LAST_QUERY_ID())) WHERE "object_kind"='DIMENSION' AND "property"='TABLE') = 70
         AND (SELECT COUNT(*) FROM TABLE(RESULT_SCAN(LAST_QUERY_ID())) WHERE "object_kind"='FACT' AND "property"='TABLE') = 26
         AND (SELECT COUNT(*) FROM TABLE(RESULT_SCAN(LAST_QUERY_ID())) WHERE "object_kind"='METRIC' AND "property"='TABLE') = 32
         AND (SELECT COUNT(DISTINCT "object_name") FROM TABLE(RESULT_SCAN(LAST_QUERY_ID())) WHERE "object_kind"='AI_VERIFIED_QUERY') = 15,
        'PASS', 'FAIL');
+
+/* ===========================================================================
+   SECTION D : ATTEMPT #2 - RELATIONSHIP-KEY / YAML COMPATIBILITY (error 392700,
+   run "phase4c_baseline_v2")
+   ---------------------------------------------------------------------------
+   ATTEMPT #1: phase4c_baseline_v1 failed on non-aggregate FILL_RATE_PERCENT
+               (see Sections A-C above). Fixed in this same deployment cycle.
+   ATTEMPT #2: phase4c_baseline_v2 failed with:
+     "Join relationship CUST_ORDER_LINE_TO_CUSTOMER using join key customer_id
+      which is not defined in logical table cust_order_line. Error code: 392700."
+
+   ROOT CAUSE (audited across ALL 15 relationships, not just this one):
+   Every FK-holding ("many") side of every one of the 15 relationships was
+   missing its own join-key column as an explicit dimension in the DDL -
+   only the referenced ("one") side already exposed that column (e.g.
+   customer.customer_id existed, but cust_order_line.customer_id did not).
+   Native CREATE SEMANTIC VIEW DDL and SEMANTIC_VIEW() queries compiled and
+   ran fine because the relationship can resolve directly against the
+   physical base-table column without a declared dimension. However, the
+   YAML representation used by Cortex Analyst Evaluation (exported via
+   SYSTEM$READ_YAML_FROM_SEMANTIC_VIEW) requires every relationship join key
+   to exist as a defined field in its logical table's dimensions/facts list.
+
+   FIX: added 16 explicit technical relationship-key dimensions (one per
+   missing join key across all 15 relationships, not just CUSTOMER_ID):
+     supplier_part.supplier_id, supplier_part.part_id,
+     po_line.supplier_id, po_line.part_id, po_line.plant_id,
+     shipment.po_number, shipment.po_line_number, shipment.carrier_id,
+     inv.part_id, inv.plant_id,
+     demand.part_id, demand.plant_id,
+     cust_order_line.customer_id, cust_order_line.part_id, cust_order_line.plant_id,
+     supplier_perf.supplier_id
+   Each is a plain passthrough of the physical FK column, commented as a
+   "Relationship key to <Table>", with no synonyms - so none compete with
+   the canonical business dimensions already defined on the referenced
+   ("one" side) tables (customer.customer_id, part.part_id, plant.plant_id,
+   supplier.supplier_id, carrier.carrier_id, po_line.po_number/po_line_number).
+   Dimension count: 54 -> 70.
+
+   VERIFICATION PERFORMED (this attempt):
+     1. Re-exported YAML via SYSTEM$READ_YAML_FROM_SEMANTIC_VIEW and
+        programmatically confirmed all 15 relationships' left_column AND
+        right_column values now exist in their respective logical table's
+        dimensions/facts/time_dimensions lists. Result: ALL 15/15 relationships,
+        all join-key columns present on both sides.
+     2. Ran SYSTEM$CREATE_SEMANTIC_VIEW_FROM_YAML('SUPPLYCHAINIQ_DB.SEMANTIC',
+        <exported YAML>, TRUE) - the officially supported verify-only mode
+        (third argument TRUE, no object created). Result: "YAML file is valid
+        for creating a semantic view. No object has been created yet."
+   IMPORTANT: neither (1) nor (2) alone constitutes proof of Cortex Analyst
+   Evaluation compatibility. They prove the YAML is structurally well-formed
+   and passes Snowflake's own YAML ingestion validator. The only authoritative
+   proof remains an actual successful Cortex Analyst Evaluation run
+   (phase4c_baseline_v3).
+   =========================================================================== */
+
+SELECT 'Phase 4C / 09_evaluation_compatibility_validation.sql - attempt #2 documentation complete. Ready for phase4c_baseline_v3.' AS STATUS;
 
 /* ===========================================================================
    SECTION B : DETERMINISTIC BASELINE REGRESSION (must be byte-identical to
@@ -170,11 +227,37 @@ SELECT 'C2. CURATED views unchanged',
    IMPORTANT CAVEAT
    ---------------------------------------------------------------------------
    All checks above prove: (a) the three metrics' expressions now contain a
-   direct aggregate function, and (b) every governed numeric result is
-   byte-identical to the pre-fix Phase 3B/4B baseline. They do NOT, by
-   themselves, prove the Semantic View will pass a Cortex Analyst evaluation
-   run. The only authoritative proof of evaluation compatibility is a
-   successful "phase4c_baseline_v2" (or later) Cortex Analyst evaluation run.
+   direct aggregate function, (b) every relationship join key now exists as
+   an explicit dimension in its logical table (both attempt #1 and attempt #2
+   fixes), and (c) every governed numeric result is byte-identical to the
+   pre-fix Phase 3B/4B baseline. They do NOT, by themselves, prove the
+   Semantic View will pass a Cortex Analyst evaluation run - not even the
+   SYSTEM$CREATE_SEMANTIC_VIEW_FROM_YAML(..., TRUE) verify-only check, which
+   only validates that the YAML is well-formed and ingestible, not that
+   Cortex Analyst Evaluation's own runtime will accept it. The only
+   authoritative proof of evaluation compatibility is a successful
+   "phase4c_baseline_v3" (or later) Cortex Analyst evaluation run.
    =========================================================================== */
 
-SELECT 'Phase 4C / 09_evaluation_compatibility_validation.sql complete - re-run Cortex Analyst evaluation (phase4c_baseline_v2) to confirm error 392700 is resolved' AS STATUS;
+-- D1. Every relationship join key exists as a field (dimension) in its
+--     logical table (all 16 relationship-key dimensions added in attempt #2).
+DESCRIBE SEMANTIC VIEW SUPPLYCHAINIQ_DB.SEMANTIC.SUPPLY_CHAIN_SEMANTIC_VIEW;
+SELECT 'D1. All 15 relationships'' join-key columns exist as explicit dimensions on both sides' AS CHECK_NAME,
+       IFF(
+         (SELECT COUNT(*) FROM (
+            SELECT 'SUPPLIER_PART' AS TBL, 'SUPPLIER_ID' AS COL UNION ALL SELECT 'SUPPLIER_PART','PART_ID'
+            UNION ALL SELECT 'PO_LINE','SUPPLIER_ID' UNION ALL SELECT 'PO_LINE','PART_ID' UNION ALL SELECT 'PO_LINE','PLANT_ID'
+            UNION ALL SELECT 'SHIPMENT','PO_NUMBER' UNION ALL SELECT 'SHIPMENT','PO_LINE_NUMBER' UNION ALL SELECT 'SHIPMENT','CARRIER_ID'
+            UNION ALL SELECT 'INV','PART_ID' UNION ALL SELECT 'INV','PLANT_ID'
+            UNION ALL SELECT 'DEMAND','PART_ID' UNION ALL SELECT 'DEMAND','PLANT_ID'
+            UNION ALL SELECT 'CUST_ORDER_LINE','CUSTOMER_ID' UNION ALL SELECT 'CUST_ORDER_LINE','PART_ID' UNION ALL SELECT 'CUST_ORDER_LINE','PLANT_ID'
+            UNION ALL SELECT 'SUPPLIER_PERF','SUPPLIER_ID'
+         ) req
+         WHERE NOT EXISTS (
+           SELECT 1 FROM TABLE(RESULT_SCAN(LAST_QUERY_ID())) d
+           WHERE d."object_kind"='DIMENSION' AND d."property"='TABLE'
+             AND d."property_value" = req.TBL AND d."object_name" = req.COL
+         )) = 0,
+       'PASS (all 16 relationship-key dimensions found)', 'FAIL') AS RESULT;
+
+SELECT 'Phase 4C / 09_evaluation_compatibility_validation.sql complete - re-run Cortex Analyst evaluation (phase4c_baseline_v3) to confirm both error 392700 root causes are resolved' AS STATUS;

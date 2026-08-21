@@ -30,6 +30,25 @@
    eligible_fulfilled_qty) are intentionally retained. See
    sql/09_evaluation_compatibility_validation.sql.
 
+   PHASE 4C NOTE (attempt #2): Evaluation run "phase4c_baseline_v2" failed
+   with error 392700 ("Join relationship CUST_ORDER_LINE_TO_CUSTOMER using
+   join key customer_id which is not defined in logical table
+   cust_order_line"). Root cause (audited across ALL 15 relationships, not
+   just this one): every FK-holding ("many") side of every relationship was
+   missing its own join-key column as an explicit dimension - only the
+   referenced ("one") side already exposed it. Native SEMANTIC_VIEW() DDL and
+   queries compiled fine because the relationship can resolve directly
+   against the physical base-table column, but the YAML representation used
+   by Cortex Analyst Evaluation requires every relationship join key to exist
+   as a defined field in its logical table. Fix: added 16 explicit technical
+   relationship-key dimensions (supplier_part.supplier_id/part_id,
+   po_line.supplier_id/part_id/plant_id, shipment.po_number/po_line_number/
+   carrier_id, inv.part_id/plant_id, demand.part_id/plant_id,
+   cust_order_line.customer_id/part_id/plant_id, supplier_perf.supplier_id) -
+   one per missing join key, each a plain passthrough of the physical FK
+   column with no synonyms, so they do not compete with the canonical
+   business dimensions on the referenced tables. Dimension count: 54 -> 70.
+
    PHASE 4B NOTE: AI_VERIFIED_QUERIES adds 15 Verified Queries (VQ01-VQ15) as
    ground truth for Cortex Analyst. VQ03 is registered with
    ONBOARDING_QUESTION FALSE and is intentionally excluded from the Phase 4C
@@ -230,6 +249,8 @@ CREATE OR REPLACE SEMANTIC VIEW SUPPLYCHAINIQ_DB.SEMANTIC.SUPPLY_CHAIN_SEMANTIC_
 
     supplier_part.is_primary_supplier AS IS_PRIMARY_SUPPLIER COMMENT = 'Whether this supplier is the primary approved source for the part.',
     supplier_part.currency AS CURRENCY COMMENT = 'Currency of the supplier-part sourcing agreement pricing.',
+    supplier_part.supplier_id AS SUPPLIER_ID COMMENT = 'Relationship key to Supplier (supplier_part_to_supplier).',
+    supplier_part.part_id AS PART_ID COMMENT = 'Relationship key to Part (supplier_part_to_part).',
 
     po_line.po_number AS PO_NUMBER WITH SYNONYMS = ('PO', 'purchase order number') COMMENT = 'Purchase order number.',
     po_line.po_line_number AS PO_LINE_NUMBER COMMENT = 'Line number within the purchase order.',
@@ -237,6 +258,9 @@ CREATE OR REPLACE SEMANTIC VIEW SUPPLYCHAINIQ_DB.SEMANTIC.SUPPLY_CHAIN_SEMANTIC_
     po_line.order_date AS ORDER_DATE COMMENT = 'Date the purchase order was placed.',
     po_line.promised_date AS PROMISED_DATE WITH SYNONYMS = ('promise date', 'supplier commitment date') COMMENT = 'Original supplier-committed delivery date. Authoritative comparison field for canonical Supplier OTD.',
     po_line.currency AS CURRENCY COMMENT = 'Currency of the purchase order line pricing and cost components. Required grouping dimension for any monetary aggregation.',
+    po_line.supplier_id AS SUPPLIER_ID COMMENT = 'Relationship key to Supplier (po_line_to_supplier).',
+    po_line.part_id AS PART_ID COMMENT = 'Relationship key to Part (po_line_to_part).',
+    po_line.plant_id AS PLANT_ID COMMENT = 'Relationship key to Plant (po_line_to_plant).',
 
     shipment.shipment_id AS SHIPMENT_ID COMMENT = 'Shipment identifier.',
     shipment.shipment_line_number AS SHIPMENT_LINE_NUMBER COMMENT = 'Line number within the shipment.',
@@ -246,12 +270,19 @@ CREATE OR REPLACE SEMANTIC VIEW SUPPLYCHAINIQ_DB.SEMANTIC.SUPPLY_CHAIN_SEMANTIC_
     shipment.expected_delivery_date AS EXPECTED_DELIVERY_DATE COMMENT = 'Shipment-level logistics target delivery date. Used ONLY for Shipment Schedule Adherence, not canonical Supplier OTD.',
     shipment.projected_delivery_date AS PROJECTED_DELIVERY_DATE WITH SYNONYMS = ('ETA') COMMENT = 'Current forward-looking estimated delivery date (not a realized outcome).',
     shipment.actual_delivery_date AS ACTUAL_DELIVERY_DATE WITH SYNONYMS = ('delivery date') COMMENT = 'Date the shipment was actually delivered. Authoritative actual-outcome field for both OTD and Schedule Adherence.',
+    shipment.po_number AS PO_NUMBER COMMENT = 'Relationship key to Purchase Order Line (shipment_to_po_line).',
+    shipment.po_line_number AS PO_LINE_NUMBER COMMENT = 'Relationship key to Purchase Order Line (shipment_to_po_line).',
+    shipment.carrier_id AS CARRIER_ID COMMENT = 'Relationship key to Carrier (shipment_to_carrier).',
 
     inv.snapshot_date AS SNAPSHOT_DATE WITH SYNONYMS = ('inventory date', 'as-of date') COMMENT = 'Date of the weekly inventory position.',
     inv.inventory_status AS INVENTORY_STATUS WITH SYNONYMS = ('stock status', 'stockout risk') COMMENT = 'Source-governed status: HEALTHY, AT_SAFETY, BELOW_SAFETY, STOCKOUT, or EXCESS. Canonical (categorical) Stockout Risk signal.',
+    inv.part_id AS PART_ID COMMENT = 'Relationship key to Part (inv_to_part).',
+    inv.plant_id AS PLANT_ID COMMENT = 'Relationship key to Plant (inv_to_plant).',
 
     demand.demand_date AS DEMAND_DATE WITH SYNONYMS = ('forecast date') COMMENT = 'Date of the daily demand record.',
     demand.demand_source AS DEMAND_SOURCE COMMENT = 'Statistical Forecast, ML Model, Sales Input, or Customer Commit.',
+    demand.part_id AS PART_ID COMMENT = 'Relationship key to Part (demand_to_part).',
+    demand.plant_id AS PLANT_ID COMMENT = 'Relationship key to Plant (demand_to_plant).',
 
     customer.customer_id AS CUSTOMER_ID COMMENT = 'Canonical customer identifier.',
     customer.customer_name AS CUSTOMER_NAME COMMENT = 'Customer name.',
@@ -266,6 +297,9 @@ CREATE OR REPLACE SEMANTIC VIEW SUPPLYCHAINIQ_DB.SEMANTIC.SUPPLY_CHAIN_SEMANTIC_
     cust_order_line.order_date AS ORDER_DATE COMMENT = 'Date the customer order was placed. Default period-attribution field for Fill Rate.',
     cust_order_line.due_date AS DUE_DATE WITH SYNONYMS = ('promise date') COMMENT = 'Customer-committed due date. Use for Fill Rate only when the question explicitly refers to due/committed period.',
     cust_order_line.priority AS PRIORITY COMMENT = 'Order-line priority.',
+    cust_order_line.customer_id AS CUSTOMER_ID COMMENT = 'Relationship key to Customer (cust_order_line_to_customer).',
+    cust_order_line.part_id AS PART_ID COMMENT = 'Relationship key to Part (cust_order_line_to_part).',
+    cust_order_line.plant_id AS PLANT_ID COMMENT = 'Relationship key to Plant (cust_order_line_to_plant).',
 
     carrier.carrier_id AS CARRIER_ID COMMENT = 'Canonical carrier identifier.',
     carrier.carrier_name AS CARRIER_NAME COMMENT = 'Carrier name.',
@@ -273,7 +307,8 @@ CREATE OR REPLACE SEMANTIC VIEW SUPPLYCHAINIQ_DB.SEMANTIC.SUPPLY_CHAIN_SEMANTIC_
     carrier.region AS REGION COMMENT = 'Carrier operating region.',
 
     supplier_perf.scorecard_date AS SCORECARD_DATE WITH SYNONYMS = ('scorecard month') COMMENT = 'Month of the supplier scorecard.',
-    supplier_perf.risk_category AS RISK_CATEGORY WITH SYNONYMS = ('risk level', 'risk tier') COMMENT = 'Source-governed multidimensional supplier risk classification: Low, Medium, High, or Critical. Canonical Supplier Risk signal - no new score is computed.'
+    supplier_perf.risk_category AS RISK_CATEGORY WITH SYNONYMS = ('risk level', 'risk tier') COMMENT = 'Source-governed multidimensional supplier risk classification: Low, Medium, High, or Critical. Canonical Supplier Risk signal - no new score is computed.',
+    supplier_perf.supplier_id AS SUPPLIER_ID COMMENT = 'Relationship key to Supplier (supplier_perf_to_supplier).'
   )
 
   METRICS (

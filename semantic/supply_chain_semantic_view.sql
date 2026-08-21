@@ -1,6 +1,6 @@
 /* ============================================================================
    SupplyChainIQ - Governed Agentic Supply Chain Control Tower
-   PHASE 3B / 4B : GOVERNED SEMANTIC VIEW + VERIFIED QUERY REPOSITORY
+   PHASE 3B / 4B / 4C : GOVERNED SEMANTIC VIEW + VERIFIED QUERY REPOSITORY
    FILE    : supply_chain_semantic_view.sql
    PURPOSE : Create the single governed Semantic View that Cortex Analyst and
              Cortex Agents will use to answer supply-chain business questions,
@@ -13,6 +13,22 @@
              CREATE OR ALTER) so it is safely rerunnable without depending on
              Preview alter semantics. COPY GRANTS preserves existing privilege
              grants across the replacement.
+
+   PHASE 4C NOTE: Cortex Analyst evaluation run "phase4c_baseline_v1" failed
+   with Snowflake error 392700 ("Metric FILL_RATE_PERCENT does not contain an
+   aggregation function"). Root cause: supplier_otd_percent,
+   shipment_schedule_adherence_percent, and fill_rate_percent were each
+   defined as a bare division of two other declared metrics with no aggregate
+   function of their own - valid for direct SEMANTIC_VIEW() execution (which
+   resolves metric references transitively) but rejected by Cortex Analyst's
+   stricter evaluation-time semantic-model validation. Fix: all three are now
+   self-contained COUNT_IF/COUNT_IF or SUM/SUM ratios with the aggregate
+   functions inlined directly in the metric's own expression. Formulas,
+   eligibility rules, governance, and numeric results are unchanged. The
+   now-unused-by-these-three private helper metrics (eligible_delivery_count,
+   on_time_delivery_count, schedule_adherent_count, eligible_ordered_qty,
+   eligible_fulfilled_qty) are intentionally retained. See
+   sql/09_evaluation_compatibility_validation.sql.
 
    PHASE 4B NOTE: AI_VERIFIED_QUERIES adds 15 Verified Queries (VQ01-VQ15) as
    ground truth for Cortex Analyst. VQ03 is registered with
@@ -292,9 +308,20 @@ CREATE OR REPLACE SEMANTIC VIEW SUPPLYCHAINIQ_DB.SEMANTIC.SUPPLY_CHAIN_SEMANTIC_
       COMMENT = 'Private helper: count of eligible shipment lines delivered on or before the parent PO line PROMISED_DATE (the original supplier commitment).',
 
     shipment.supplier_otd_percent AS
-      shipment.on_time_delivery_count / NULLIF(shipment.eligible_delivery_count, 0)
+      COUNT_IF(
+        shipment.SHIPMENT_STATUS IN ('DELIVERED', 'PARTIAL')
+        AND shipment.ACTUAL_DELIVERY_DATE IS NOT NULL
+        AND po_line.PO_STATUS <> 'CANCELLED'
+        AND shipment.ACTUAL_DELIVERY_DATE <= po_line.PROMISED_DATE
+      )
+      / NULLIF(
+          COUNT_IF(
+            shipment.SHIPMENT_STATUS IN ('DELIVERED', 'PARTIAL')
+            AND shipment.ACTUAL_DELIVERY_DATE IS NOT NULL
+            AND po_line.PO_STATUS <> 'CANCELLED'
+          ), 0)
       WITH SYNONYMS = ('on-time delivery', 'supplier delivery performance', 'vendor delivery performance', 'on-time percentage')
-      COMMENT = 'Canonical Supplier OTD: percentage of eligible inbound shipment lines delivered on or before the PARENT PO LINE PROMISED_DATE (the original supplier commitment) - NOT the shipment EXPECTED_DELIVERY_DATE. Ratio of aggregated counts; returns NULL when there are no eligible shipments.',
+      COMMENT = 'Canonical Supplier OTD: percentage of eligible inbound shipment lines delivered on or before the PARENT PO LINE PROMISED_DATE (the original supplier commitment) - NOT the shipment EXPECTED_DELIVERY_DATE. Ratio of aggregated counts; returns NULL when there are no eligible shipments. Phase 4C: rewritten as a self-contained COUNT_IF/COUNT_IF ratio (Snowflake error 392700 - a metric expression built only from other metric references, with no aggregate function of its own, is rejected by Cortex Analyst evaluation validation even though it executes fine via SEMANTIC_VIEW()). Formula and result unchanged from the private-helper-based version.',
 
     /* ---------------- Shipment metrics: Shipment Schedule Adherence (distinct from OTD) ---------------- */
     PRIVATE shipment.schedule_adherent_count AS
@@ -307,9 +334,20 @@ CREATE OR REPLACE SEMANTIC VIEW SUPPLYCHAINIQ_DB.SEMANTIC.SUPPLY_CHAIN_SEMANTIC_
       COMMENT = 'Private helper: count of eligible shipment lines delivered on or before their OWN shipment-level EXPECTED_DELIVERY_DATE.',
 
     shipment.shipment_schedule_adherence_percent AS
-      shipment.schedule_adherent_count / NULLIF(shipment.eligible_delivery_count, 0)
+      COUNT_IF(
+        shipment.SHIPMENT_STATUS IN ('DELIVERED', 'PARTIAL')
+        AND shipment.ACTUAL_DELIVERY_DATE IS NOT NULL
+        AND po_line.PO_STATUS <> 'CANCELLED'
+        AND shipment.ACTUAL_DELIVERY_DATE <= shipment.EXPECTED_DELIVERY_DATE
+      )
+      / NULLIF(
+          COUNT_IF(
+            shipment.SHIPMENT_STATUS IN ('DELIVERED', 'PARTIAL')
+            AND shipment.ACTUAL_DELIVERY_DATE IS NOT NULL
+            AND po_line.PO_STATUS <> 'CANCELLED'
+          ), 0)
       WITH SYNONYMS = ('shipment schedule adherence', 'logistics on-time rate', 'shipment target adherence')
-      COMMENT = 'Shipment Schedule Adherence: percentage of eligible shipment lines meeting their own (possibly re-planned) logistics target EXPECTED_DELIVERY_DATE. This is a logistics-execution KPI, NOT canonical Supplier OTD - do not use its synonyms interchangeably with Supplier OTD.',
+      COMMENT = 'Shipment Schedule Adherence: percentage of eligible shipment lines meeting their own (possibly re-planned) logistics target EXPECTED_DELIVERY_DATE. This is a logistics-execution KPI, NOT canonical Supplier OTD - do not use its synonyms interchangeably with Supplier OTD. Phase 4C: rewritten as a self-contained COUNT_IF/COUNT_IF ratio for Cortex Analyst evaluation compatibility (error 392700). Formula and result unchanged.',
 
     /* ---------------- Shipment metrics: Actual Landed Cost ---------------- */
     shipment.actual_landed_cost AS
@@ -379,9 +417,11 @@ CREATE OR REPLACE SEMANTIC VIEW SUPPLYCHAINIQ_DB.SEMANTIC.SUPPLY_CHAIN_SEMANTIC_
       SUM(IFF(cust_order_line.ORDER_STATUS <> 'CANCELLED', cust_order_line.fulfilled_qty, 0))
       COMMENT = 'Private helper: total fulfilled quantity excluding CANCELLED order lines.',
     cust_order_line.fill_rate_percent AS
-      cust_order_line.eligible_fulfilled_qty / NULLIF(cust_order_line.eligible_ordered_qty, 0)
+      SUM(IFF(cust_order_line.ORDER_STATUS <> 'CANCELLED', cust_order_line.fulfilled_qty, 0))
+      / NULLIF(
+          SUM(IFF(cust_order_line.ORDER_STATUS <> 'CANCELLED', cust_order_line.ordered_qty, 0)), 0)
       WITH SYNONYMS = ('fulfillment rate', 'order fulfillment', 'quantity fulfillment')
-      COMMENT = 'Canonical Fill Rate: SUM(FULFILLED_QTY) / SUM(ORDERED_QTY), excluding CANCELLED order lines. Never average row-level percentages. Default period attribution is cust_order_line.order_date; use cust_order_line.due_date only when the question explicitly refers to due/committed period.',
+      COMMENT = 'Canonical Fill Rate: SUM(FULFILLED_QTY) / SUM(ORDERED_QTY), excluding CANCELLED order lines. Never average row-level percentages. Default period attribution is cust_order_line.order_date; use cust_order_line.due_date only when the question explicitly refers to due/committed period. Phase 4C: rewritten as a self-contained SUM/SUM ratio for Cortex Analyst evaluation compatibility (error 392700 - the prior version divided two other metric references with no aggregate of its own). Formula and result unchanged.',
     cust_order_line.total_ordered_qty AS SUM(cust_order_line.ordered_qty)
       COMMENT = 'Total ordered quantity across customer order lines (all statuses).',
     cust_order_line.total_fulfilled_qty AS SUM(cust_order_line.fulfilled_qty)

@@ -1,0 +1,183 @@
+"""
+Phase 9: structured Snowflake data access for the SupplyChainIQ Control Tower.
+
+Every function here either reads governed data (CURATED / WORKFLOW / ACTION)
+or calls the single human-only write procedure
+(WORKFLOW.REVIEW_INTERVENTION_APPROVAL_REQUEST). No business logic is
+duplicated in Python -- every number/status shown in the UI comes straight
+from a live query against the existing governed backend.
+
+Read-only dashboard queries may use either connection (identity is
+irrelevant for shared reference data). The human-review write MUST be
+called with the RESTRICTED CALLER connection so REVIEW_INTERVENTION_
+APPROVAL_REQUEST's SYS_CONTEXT-based identity capture reflects the actual
+signed-in viewer, not the Streamlit app owner.
+"""
+
+DB = "SUPPLYCHAINIQ_DB"
+
+
+def flagship_risk(conn):
+    """Live flagship risk facts for S017 / P104 / P01 via the governed decision procedure."""
+    q = f"SELECT {DB}.DECISION.EVALUATE_SUPPLY_CHAIN_INTERVENTIONS('S017','P104','P01') AS RESULT"
+    df = conn.query(q, ttl=0)
+    return df.to_dict("records")[0]["RESULT"]
+
+
+def overview_kpis(conn):
+    """Live KPI values sourced from existing curated/workflow/action objects only."""
+    kpis = {}
+
+    df = conn.query(
+        f"""
+        SELECT
+          COUNT(*) AS affected_order_lines,
+          SUM(od.ORDER_VALUE) AS revenue_exposure
+        FROM {DB}.CURATED.CUSTOMER_ORDER_LINE od
+        WHERE od.PART_ID = 'P104'
+        """,
+        ttl=0,
+    )
+    row = df.to_dict("records")[0]
+    kpis["affected_order_lines"] = row.get("AFFECTED_ORDER_LINES")
+    kpis["revenue_exposure"] = row.get("REVENUE_EXPOSURE")
+
+    # OTD is an existing Semantic View metric (shipment.supplier_otd_percent) --
+    # queried via native SEMANTIC_VIEW() SQL, never recomputed in Python.
+    df = conn.query(
+        f"""SELECT supplier_otd_percent AS OTD FROM SEMANTIC_VIEW(
+              {DB}.SEMANTIC.SUPPLY_CHAIN_SEMANTIC_VIEW METRICS shipment.supplier_otd_percent)""",
+        ttl=0,
+    )
+    kpis["overall_otd"] = df.to_dict("records")[0]["OTD"]
+
+    df = conn.query(
+        f"""SELECT supplier_id, supplier_otd_percent AS OTD FROM SEMANTIC_VIEW(
+              {DB}.SEMANTIC.SUPPLY_CHAIN_SEMANTIC_VIEW METRICS shipment.supplier_otd_percent
+              DIMENSIONS supplier.supplier_id) WHERE supplier_id = 'S017'""",
+        ttl=0,
+    )
+    recs = df.to_dict("records")
+    kpis["pinnacle_otd"] = recs[0]["OTD"] if recs else None
+
+    df = conn.query(
+        f"SELECT COUNT(*) AS N FROM {DB}.WORKFLOW.INTERVENTION_APPROVAL_REQUEST WHERE REQUEST_STATUS = 'PENDING'",
+        ttl=0,
+    )
+    kpis["pending_approvals"] = df.to_dict("records")[0]["N"]
+
+    df = conn.query(
+        f"""SELECT COUNT(*) AS N FROM {DB}.WORKFLOW.INTERVENTION_APPROVAL_REQUEST
+            WHERE REQUEST_STATUS = 'APPROVED' AND EXECUTION_STATUS = 'NOT_DISPATCHED'""",
+        ttl=0,
+    )
+    kpis["approved_not_dispatched"] = df.to_dict("records")[0]["N"]
+
+    df = conn.query(
+        f"SELECT COUNT(*) AS N FROM {DB}.ACTION.INTERVENTION_ACTION_COMMAND WHERE ACTION_STATUS = 'DISPATCHED_DEMO'",
+        ttl=0,
+    )
+    kpis["dispatched_demo_actions"] = df.to_dict("records")[0]["N"]
+
+    return kpis
+
+
+# Historical Phase 8B pre-fix validation artifact -- excluded from the default
+# flagship/demo view per Phase 9 design. Never deleted or modified.
+KNOWN_TEST_ARTIFACT_REQUEST_IDS = ("AR-764ccb86-e3c6-4a09-9b93-450264f37f51",)
+
+
+def approval_queue(conn, include_test_artifacts=False):
+    """Business-readable approval queue from WORKFLOW.INTERVENTION_APPROVAL_REQUEST."""
+    exclude_clause = ""
+    if not include_test_artifacts:
+        placeholders = ",".join(f"'{rid}'" for rid in KNOWN_TEST_ARTIFACT_REQUEST_IDS)
+        exclude_clause = f"WHERE r.REQUEST_ID NOT IN ({placeholders})"
+
+    df = conn.query(
+        f"""
+        SELECT
+          r.REQUEST_ID, s.SUPPLIER_NAME, p.PART_DESCRIPTION, pl.PLANT_NAME,
+          r.SELECTED_INTERVENTION_TYPE, r.RECOMMENDATION_RANK,
+          r.REQUEST_STATUS, r.EXECUTION_STATUS,
+          r.REQUESTED_BY, r.REQUESTED_ROLE, r.REQUESTED_AT,
+          r.APPROVED_OR_REJECTED_BY, r.DECISION_AT, r.DECISION_COMMENT,
+          r.ACTION_ID, r.SUPPLIER_ID, r.PART_ID, r.DESTINATION_PLANT_ID,
+          r.RECOMMENDATION_SNAPSHOT, r.RECOMMENDATION_HASH
+        FROM {DB}.WORKFLOW.INTERVENTION_APPROVAL_REQUEST r
+        LEFT JOIN {DB}.CURATED.SUPPLIER s ON s.SUPPLIER_ID = r.SUPPLIER_ID
+        LEFT JOIN {DB}.CURATED.PART p ON p.PART_ID = r.PART_ID
+        LEFT JOIN {DB}.CURATED.PLANT pl ON pl.PLANT_ID = r.DESTINATION_PLANT_ID
+        {exclude_clause}
+        ORDER BY r.REQUESTED_AT DESC
+        """,
+        ttl=0,
+    )
+    return df
+
+
+def actions_view(conn):
+    """Action command + event data from the ACTION schema."""
+    df = conn.query(
+        f"""
+        SELECT
+          a.ACTION_ID, a.REQUEST_ID, a.INTERVENTION_TYPE, a.EXECUTION_MODE, a.ACTION_STATUS,
+          a.SUPPLIER_ID, a.PART_ID, a.DESTINATION_PLANT_ID,
+          a.DISPATCHED_BY, a.DISPATCHED_ROLE, a.DISPATCHED_AT,
+          a.COMMAND_PAYLOAD, a.APPROVED_SNAPSHOT_HASH, a.FRESH_EVALUATION_HASH
+        FROM {DB}.ACTION.INTERVENTION_ACTION_COMMAND a
+        ORDER BY a.DISPATCHED_AT DESC
+        """,
+        ttl=0,
+    )
+    return df
+
+
+def workflow_timeline(conn, request_id):
+    """Structured timeline for one request: approval events + action events."""
+    approval_events = conn.query(
+        f"""
+        SELECT EVENT_ID, EVENT_TYPE, EVENT_AT, ACTOR, ACTOR_ROLE, OLD_STATUS, NEW_STATUS,
+               COMMENT AS DETAILS
+        FROM {DB}.WORKFLOW.INTERVENTION_APPROVAL_EVENT
+        WHERE REQUEST_ID = ?
+        ORDER BY EVENT_AT
+        """,
+        params=[request_id],
+        ttl=0,
+    )
+    action_events = conn.query(
+        f"""
+        SELECT EVENT_ID, ACTION_ID, EVENT_TYPE, EVENT_AT, ACTOR, ACTOR_ROLE, DETAILS
+        FROM {DB}.ACTION.INTERVENTION_ACTION_EVENT
+        WHERE REQUEST_ID = ?
+        ORDER BY EVENT_AT
+        """,
+        params=[request_id],
+        ttl=0,
+    )
+    return approval_events, action_events
+
+
+def review_request(caller_conn, request_id, decision, comment):
+    """
+    The ONLY write path in this file. Calls the human-only procedure
+    WORKFLOW.REVIEW_INTERVENTION_APPROVAL_REQUEST directly via the
+    RESTRICTED CALLER connection so the procedure's SYS_CONTEXT-based
+    identity capture reflects the actual signed-in human, not the
+    Streamlit app owner. This procedure is never exposed to the Cortex
+    Agent and this function must never be called on the Agent's behalf.
+    """
+    q = f"SELECT {DB}.WORKFLOW.REVIEW_INTERVENTION_APPROVAL_REQUEST(?, ?, ?) AS RESULT"
+    df = caller_conn.query(q, params=[request_id, decision, comment], ttl=0)
+    return df.to_dict("records")[0]["RESULT"]
+
+
+def viewer_identity(caller_conn):
+    """CURRENT_USER()/CURRENT_ROLE() as observed through the restricted caller connection."""
+    df = caller_conn.query(
+        "SELECT CURRENT_USER() AS U, CURRENT_ROLE() AS R, "
+        "SYS_CONTEXT('SNOWFLAKE$SESSION','PRINCIPAL_NAME') AS PRINCIPAL",
+        ttl=0,
+    )
+    return df.to_dict("records")[0]

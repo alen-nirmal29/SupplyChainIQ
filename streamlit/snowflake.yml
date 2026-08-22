@@ -1,0 +1,19 @@
+definition_version: "2"
+
+entities:
+  supplychainiq_control_tower:
+    type: streamlit
+    identifier:
+      name: SUPPLYCHAINIQ_CONTROL_TOWER
+      database: SUPPLYCHAINIQ_DB
+      schema: APP
+    title: "SupplyChainIQ Control Tower"
+    query_warehouse: COMPUTE_WH
+    main_file: streamlit_app.py
+    runtime_name: SYSTEM$ST_CONTAINER_RUNTIME_PY3_11
+    compute_pool: SYSTEM_COMPUTE_POOL_CPU
+    artifacts:
+      - streamlit_app.py
+      - components/
+      - services/
+      - environment.yml

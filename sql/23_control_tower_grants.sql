@@ -1,0 +1,98 @@
+-- =====================================================================
+-- Phase 9: SupplyChainIQ Control Tower -- grants documentation
+-- =====================================================================
+-- No business-logic objects are created or modified here. This file
+-- documents every grant actually required to run the Streamlit Control
+-- Tower and its restricted-caller-rights human approval path, following
+-- least-privilege principles:
+--   - Ordinary app viewers NEVER receive direct INSERT/UPDATE/DELETE on
+--     WORKFLOW or ACTION tables.
+--   - Human approval remains procedure-mediated
+--     (WORKFLOW.REVIEW_INTERVENTION_APPROVAL_REQUEST) -- viewers get USAGE
+--     on the procedure, never direct table DML.
+--   - The Cortex Agent is NEVER granted access to
+--     WORKFLOW.REVIEW_INTERVENTION_APPROVAL_REQUEST (confirmed: it is not
+--     one of the Agent's 8 tools -- see sql/21_action_execution.sql).
+--
+-- Current environment: this account has a single actual user, ALEN,
+-- operating under ACCOUNTADMIN, which already holds every privilege
+-- below implicitly (verified via SHOW GRANTS TO ROLE ACCOUNTADMIN during
+-- Phase 9.1 audit). No additional grants were required to deploy or run
+-- the app in this single-user demo. The GRANT statements below are
+-- written for a hypothetical least-privilege APP_VIEWER role and are
+-- provided as the documented, ready-to-apply hardening path for any
+-- future multi-user deployment -- they are commented out by default so
+-- this file can be reviewed/uncommented deliberately rather than run
+-- blindly against a production role.
+-- =====================================================================
+
+-- --------------------------------------------------------------
+-- Section A: hypothetical least-privilege role for app viewers
+-- --------------------------------------------------------------
+-- CREATE ROLE IF NOT EXISTS SUPPLYCHAINIQ_APP_VIEWER;
+
+-- --------------------------------------------------------------
+-- Section B: warehouse / compute pool access
+-- --------------------------------------------------------------
+-- GRANT USAGE ON WAREHOUSE COMPUTE_WH TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+-- GRANT USAGE ON COMPUTE POOL SYSTEM_COMPUTE_POOL_CPU TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+
+-- --------------------------------------------------------------
+-- Section C: Streamlit object access
+-- --------------------------------------------------------------
+-- GRANT USAGE ON DATABASE SUPPLYCHAINIQ_DB TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+-- GRANT USAGE ON SCHEMA SUPPLYCHAINIQ_DB.APP TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+-- GRANT USAGE ON STREAMLIT SUPPLYCHAINIQ_DB.APP.SUPPLYCHAINIQ_CONTROL_TOWER TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+
+-- --------------------------------------------------------------
+-- Section D: Cortex Agent invocation (chat)
+-- --------------------------------------------------------------
+-- GRANT USAGE ON SCHEMA SUPPLYCHAINIQ_DB.AGENTS TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+-- GRANT USAGE ON AGENT SUPPLYCHAINIQ_DB.AGENTS.SUPPLYCHAINIQ_AGENT TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+-- Note: SNOWFLAKE.CORTEX.DATA_AGENT_RUN is a Snowflake system function;
+-- no separate grant beyond USAGE on the target Agent object is required.
+
+-- --------------------------------------------------------------
+-- Section E: read-only governed data (Overview / Approvals / Actions / Timeline)
+-- --------------------------------------------------------------
+-- GRANT USAGE ON SCHEMA SUPPLYCHAINIQ_DB.CURATED TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+-- GRANT SELECT ON ALL VIEWS IN SCHEMA SUPPLYCHAINIQ_DB.CURATED TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+--
+-- GRANT USAGE ON SCHEMA SUPPLYCHAINIQ_DB.SEMANTIC TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+-- GRANT SELECT ON SEMANTIC VIEW SUPPLYCHAINIQ_DB.SEMANTIC.SUPPLY_CHAIN_SEMANTIC_VIEW TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+--
+-- GRANT USAGE ON SCHEMA SUPPLYCHAINIQ_DB.WORKFLOW TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+-- GRANT SELECT ON TABLE SUPPLYCHAINIQ_DB.WORKFLOW.INTERVENTION_APPROVAL_REQUEST TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+-- GRANT SELECT ON TABLE SUPPLYCHAINIQ_DB.WORKFLOW.INTERVENTION_APPROVAL_EVENT TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+--
+-- GRANT USAGE ON SCHEMA SUPPLYCHAINIQ_DB.ACTION TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+-- GRANT SELECT ON TABLE SUPPLYCHAINIQ_DB.ACTION.INTERVENTION_ACTION_COMMAND TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+-- GRANT SELECT ON TABLE SUPPLYCHAINIQ_DB.ACTION.INTERVENTION_ACTION_EVENT TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+--
+-- GRANT USAGE ON SCHEMA SUPPLYCHAINIQ_DB.DECISION TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+-- GRANT USAGE ON PROCEDURE SUPPLYCHAINIQ_DB.DECISION.EVALUATE_SUPPLY_CHAIN_INTERVENTIONS(VARCHAR,VARCHAR,VARCHAR)
+--   TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+
+-- --------------------------------------------------------------
+-- Section F: human approval procedure -- procedure-mediated only
+-- --------------------------------------------------------------
+-- GRANT USAGE ON PROCEDURE SUPPLYCHAINIQ_DB.WORKFLOW.REVIEW_INTERVENTION_APPROVAL_REQUEST(VARCHAR,VARCHAR,VARCHAR)
+--   TO ROLE SUPPLYCHAINIQ_APP_VIEWER;
+-- Explicitly NOT granted: INSERT/UPDATE/DELETE on WORKFLOW.INTERVENTION_APPROVAL_REQUEST
+-- or WORKFLOW.INTERVENTION_APPROVAL_EVENT. Explicitly NOT granted to the
+-- Cortex Agent under any circumstance -- this procedure is human-only.
+
+-- --------------------------------------------------------------
+-- Section G: assignment
+-- --------------------------------------------------------------
+-- GRANT ROLE SUPPLYCHAINIQ_APP_VIEWER TO USER <viewer_username>;
+
+-- =====================================================================
+-- Actual grants applied in THIS deployment (single-user ACCOUNTADMIN demo)
+-- =====================================================================
+-- None were required beyond what ACCOUNTADMIN already holds. Verified via:
+--   SHOW GRANTS TO ROLE ACCOUNTADMIN;
+-- during the Phase 9.1 read-only audit -- ownership/privileges over all
+-- databases, warehouses, the compute pool, and the Agent were already
+-- present. This is documented here as a known single-user-demo limitation,
+-- not a production-ready least-privilege configuration.

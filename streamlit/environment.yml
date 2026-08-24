@@ -1,5 +1,0 @@
-name: supplychainiq_control_tower
-channels:
-  - snowflake
-dependencies:
-  - streamlit

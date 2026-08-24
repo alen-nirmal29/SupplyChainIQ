@@ -16,4 +16,4 @@ entities:
       - streamlit_app.py
       - components/
       - services/
-      - environment.yml
+      - pyproject.toml

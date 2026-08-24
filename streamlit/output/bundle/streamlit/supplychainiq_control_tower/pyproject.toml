@@ -1,0 +1,14 @@
+# Container-runtime dependency manifest for SupplyChainIQ Control Tower.
+# environment.yml is a warehouse-runtime construct and does not apply to
+# SYSTEM$ST_CONTAINER_RUNTIME_PY3_11 -- pyproject.toml is the correct
+# manifest for this runtime. Only streamlit itself is required; the
+# application otherwise uses only the Python standard library and local
+# components/services modules.
+
+[project]
+name = "supplychainiq-control-tower"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "streamlit[snowflake]>=1.50,<2"
+]

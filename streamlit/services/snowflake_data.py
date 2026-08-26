@@ -89,6 +89,123 @@ def overview_kpis(conn):
     return kpis
 
 
+def risk_radar(conn):
+    """Ranked, deterministic risk records calculated by the governed RISK view."""
+    return conn.query(
+        f"""
+        SELECT *
+        FROM {DB}.RISK.SUPPLY_CHAIN_RISK_RANKING
+        ORDER BY RISK_RANK, RISK_ID
+        """,
+        ttl=0,
+    )
+
+
+def risk_radar_summary(conn):
+    """Live summary counts and INR customer-order exposure from the RISK view."""
+    df = conn.query(
+        f"""
+        SELECT
+          COUNT(*) AS ACTIVE_RISKS,
+          COUNT_IF(SEVERITY = 'CRITICAL') AS CRITICAL_RISKS,
+          COUNT_IF(SEVERITY = 'HIGH') AS HIGH_RISKS,
+          COUNT_IF(SEVERITY = 'MEDIUM') AS MEDIUM_RISKS,
+          SUM(REVENUE_EXPOSURE) AS REVENUE_EXPOSURE
+        FROM {DB}.RISK.SUPPLY_CHAIN_RISK_RANKING
+        """,
+        ttl=0,
+    )
+    return df.to_dict("records")[0]
+
+
+def top_active_risk(conn):
+    """Highest currently ranked governed risk, or None when the RISK view is empty."""
+    df = conn.query(
+        f"""
+        SELECT *
+        FROM {DB}.RISK.SUPPLY_CHAIN_RISK_RANKING
+        WHERE RISK_RANK = 1
+        """,
+        ttl=0,
+    )
+    records = df.to_dict("records")
+    return records[0] if records else None
+
+
+def risk_intervention_options(conn, risk):
+    """Read-only deterministic evaluator output for one selected risk grain."""
+    session = conn.session()
+    raw = session.call(
+        f"{DB}.DECISION.EVALUATE_SUPPLY_CHAIN_INTERVENTIONS",
+        risk["SUPPLIER_ID"],
+        risk["PART_ID"],
+        risk["PLANT_ID"],
+    )
+    return json.loads(raw) if isinstance(raw, str) else raw
+
+
+def enrich_qualifying_risks(conn, records, max_evaluations=10):
+    """Attach evaluator-selected recommendations for at most top-N Critical/High risks."""
+    evaluated = 0
+    enriched = []
+    for risk in records:
+        item = dict(risk)
+        item["RECOMMENDED_OPTION"] = None
+        item["INTERVENTION_OPTIONS"] = None
+        if item.get("SEVERITY") in ("CRITICAL", "HIGH") and evaluated < max_evaluations:
+            options = risk_intervention_options(conn, item)
+            item["INTERVENTION_OPTIONS"] = options
+            item["RECOMMENDED_OPTION"] = next(
+                (option for option in options if option.get("RECOMMENDED") is True), None
+            )
+            evaluated += 1
+        enriched.append(item)
+    return enriched
+
+
+def risk_impact_chain(risk, recommendation=None):
+    """Presentation-only chain composed from governed risk and evaluator fields."""
+    chain = [
+        {
+            "stage": "Supplier",
+            "title": risk.get("SUPPLIER_NAME") or risk.get("SUPPLIER_ID"),
+            "detail": (
+                f"Historical supplier OTD: {risk['SUPPLIER_OTD_PERCENT']:.1%}"
+                if risk.get("SUPPLIER_OTD_PERCENT") is not None
+                else "No governed historical supplier OTD is available for this risk."
+            ),
+        },
+        {
+            "stage": "Shipment",
+            "title": "Inbound shipment delayed" if risk.get("DELAYED_SHIPMENT_ID") else "No delayed inbound shipment attributed",
+            "detail": (
+                f"{risk['DELAYED_SHIPMENT_ID']} is {risk.get('DELAY_DAYS')} day(s) behind its promised date."
+                if risk.get("DELAYED_SHIPMENT_ID")
+                else "Risk remains based on governed inventory and open customer-order demand."
+            ),
+        },
+        {
+            "stage": "Inventory constraint",
+            "title": f"{risk.get('PART_ID')} at {risk.get('PLANT_NAME')}",
+            "detail": f"Governed shortage: {risk.get('SHORTAGE_QUANTITY')} units after safety stock.",
+        },
+        {
+            "stage": "Customer impact",
+            "title": "Open customer demand at risk",
+            "detail": f"{risk.get('AFFECTED_ORDER_LINES')} order line(s); first due {risk.get('FIRST_CUSTOMER_DUE_DATE')}; revenue exposure is INR {risk.get('REVENUE_EXPOSURE')}.",
+        },
+    ]
+    if recommendation:
+        chain.append(
+            {
+                "stage": "Recommended response",
+                "title": recommendation.get("INTERVENTION_TYPE"),
+                "detail": recommendation.get("REASON") or "Selected deterministically by the governed evaluator.",
+            }
+        )
+    return chain
+
+
 # Historical Phase 8B pre-fix validation artifact -- excluded from the default
 # flagship/demo view per Phase 9 design. Never deleted or modified.
 KNOWN_TEST_ARTIFACT_REQUEST_IDS = ("AR-764ccb86-e3c6-4a09-9b93-450264f37f51",)

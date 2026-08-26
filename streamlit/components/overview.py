@@ -35,7 +35,47 @@ def render(owner_conn):
     c7.metric("🔵 Dispatched demo actions", kpis.get("dispatched_demo_actions", "—"))
 
     st.divider()
-    render_flagship_risk_panel(owner_conn)
+    render_top_active_risk_panel(owner_conn)
+
+
+def render_top_active_risk_panel(owner_conn):
+    try:
+        risk = sd.top_active_risk(owner_conn)
+    except Exception as e:
+        error_text = str(e)
+        missing_risk_object = (
+            ("SUPPLY_CHAIN_RISK" in error_text or "RISK." in error_text)
+            and ("does not exist" in error_text.lower() or "not authorized" in error_text.lower())
+        )
+        if missing_risk_object:
+            st.caption("Risk Radar is not yet available in this environment; showing the preselected demo scenario below.")
+        else:
+            st.warning("Could not load Top Active Risk; showing the preselected demo scenario below.")
+            with st.expander("Technical details"):
+                st.code(error_text)
+        render_flagship_risk_panel(owner_conn)
+        return
+
+    if not risk:
+        st.info("Risk Radar found no current shortage risks in the governed data.")
+        return
+
+    st.markdown(f"### Top Active Risk: {risk['PART_DESCRIPTION']} at {risk['PLANT_NAME']}")
+    st.caption(
+        f"Derived from current governed Risk Radar ranking · Supplier: **{risk['SUPPLIER_NAME']} ({risk['SUPPLIER_ID']})**"
+    )
+    cols = st.columns(4)
+    cols[0].metric("Severity", risk.get("SEVERITY", "—"))
+    cols[1].metric("Risk score", f"{risk.get('RISK_SCORE', '—')}/100")
+    cols[2].metric("Shortage", risk.get("SHORTAGE_QUANTITY", "—"))
+    cols[3].metric(
+        "Revenue exposure",
+        f"INR {risk['REVENUE_EXPOSURE']:,.0f}" if risk.get("REVENUE_EXPOSURE") is not None else "—",
+    )
+    st.caption(
+        f"Why this is a risk: {risk.get('PRIMARY_RISK_REASON', '—')}. "
+        "Open Risk Radar for evidence, deterministic options, and comparison."
+    )
 
 
 def render_flagship_risk_panel(owner_conn):

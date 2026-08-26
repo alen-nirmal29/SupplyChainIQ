@@ -15,7 +15,7 @@ page-specific logic), per Phase 9 design:
 
 import streamlit as st
 
-from components import overview, chat, approvals, actions, timeline
+from components import overview, risk_radar, chat, approvals, actions, timeline
 from services import snowflake_data as sd
 
 st.set_page_config(page_title="SupplyChainIQ Control Tower", layout="wide")
@@ -70,7 +70,7 @@ with st.sidebar:
             st.code(caller_conn_error)
 
     st.divider()
-    page = st.radio("Navigate", ["Overview", "Ask SupplyChainIQ", "Approvals", "Actions", "Timeline"], label_visibility="collapsed")
+    page = st.radio("Navigate", ["Overview", "Risk Radar", "Ask SupplyChainIQ", "Approvals", "Actions", "Timeline"], label_visibility="collapsed")
 
     st.divider()
     st.caption(
@@ -82,6 +82,8 @@ with st.sidebar:
 # --- Page routing (flat, demo-friendly) ---
 if page == "Overview":
     overview.render(owner_conn)
+elif page == "Risk Radar":
+    risk_radar.render(owner_conn)
 elif page == "Ask SupplyChainIQ":
     chat.render(owner_conn)
 elif page == "Approvals":

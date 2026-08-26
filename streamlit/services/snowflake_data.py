@@ -14,14 +14,21 @@ APPROVAL_REQUEST's SYS_CONTEXT-based identity capture reflects the actual
 signed-in viewer, not the Streamlit app owner.
 """
 
+import json
+
 DB = "SUPPLYCHAINIQ_DB"
 
 
 def flagship_risk(conn):
     """Live flagship risk facts for S017 / P104 / P01 via the governed decision procedure."""
-    q = f"SELECT {DB}.DECISION.EVALUATE_SUPPLY_CHAIN_INTERVENTIONS('S017','P104','P01') AS RESULT"
-    df = conn.query(q, ttl=0)
-    return df.to_dict("records")[0]["RESULT"]
+    session = conn.session()
+    raw = session.call(
+        f"{DB}.DECISION.EVALUATE_SUPPLY_CHAIN_INTERVENTIONS",
+        "S017",
+        "P104",
+        "P01",
+    )
+    return json.loads(raw) if isinstance(raw, str) else raw
 
 
 def overview_kpis(conn):

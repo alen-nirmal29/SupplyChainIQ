@@ -1,10 +1,13 @@
 definition_version: "2"
 
+env:
+  streamlit_name: SUPPLYCHAINIQ_CONTROL_TOWER_DEV
+
 entities:
   supplychainiq_control_tower:
     type: streamlit
     identifier:
-      name: SUPPLYCHAINIQ_CONTROL_TOWER
+      name: <% ctx.env.streamlit_name %>
       database: SUPPLYCHAINIQ_DB
       schema: APP
     title: "SupplyChainIQ Control Tower"

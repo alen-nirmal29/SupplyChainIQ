@@ -175,9 +175,14 @@ def review_request(caller_conn, request_id, decision, comment):
     Streamlit app owner. This procedure is never exposed to the Cortex
     Agent and this function must never be called on the Agent's behalf.
     """
-    q = f"SELECT {DB}.WORKFLOW.REVIEW_INTERVENTION_APPROVAL_REQUEST(?, ?, ?) AS RESULT"
-    df = caller_conn.query(q, params=[request_id, decision, comment], ttl=0)
-    return df.to_dict("records")[0]["RESULT"]
+    session = caller_conn.session()
+    raw = session.call(
+        f"{DB}.WORKFLOW.REVIEW_INTERVENTION_APPROVAL_REQUEST",
+        request_id,
+        decision,
+        comment,
+    )
+    return json.loads(raw) if isinstance(raw, str) else raw
 
 
 def viewer_identity(caller_conn):

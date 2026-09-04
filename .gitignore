@@ -1,0 +1,24 @@
+# Node / Next.js (web/)
+web/node_modules/
+web/.next/
+web/out/
+web/.env
+web/.env.local
+web/.env.*.local
+web/*.tsbuildinfo
+web/next-env.d.ts
+
+# Python (streamlit/)
+**/__pycache__/
+*.pyc
+
+# Snowflake credentials / keys (never commit, regardless of location)
+*.pem
+*.p8
+*.key
+.env
+.env.local
+.env.*.local
+
+# OS/editor noise
+.DS_Store

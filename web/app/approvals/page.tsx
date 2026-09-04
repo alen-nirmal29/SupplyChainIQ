@@ -31,21 +31,21 @@ export default function ApprovalsPage() {
   useEffect(load, [load]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="page-shell">
+      <div className="page-header">
         <div>
-          <h1 className="text-xl font-semibold text-white">Approval Queue</h1>
-          <p className="text-sm text-slate-400">
+          <h1 className="page-title">Approval Queue</h1>
+          <p className="page-description">
             Sourced directly from WORKFLOW.INTERVENTION_APPROVAL_REQUEST. Human decisions are procedure-mediated.
           </p>
         </div>
-        <button onClick={load} className="rounded-md border border-control-border bg-control-panel px-3 py-1.5 text-sm text-slate-200 hover:bg-white/5">
+        <button onClick={load} className="button-secondary shrink-0">
           Refresh
         </button>
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-slate-300">
-        <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
+      <label className="surface flex w-fit cursor-pointer items-center gap-3 px-4 py-3 text-sm text-slate-700 transition hover:border-blue-300 hover:text-blue-700">
+        <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} className="h-4 w-4 rounded border-slate-300 bg-white text-control-accent accent-blue-500" />
         Show all records (including test artifacts)
       </label>
 
@@ -53,7 +53,7 @@ export default function ApprovalsPage() {
       {error && <ErrorState message="Could not load the approval queue from Snowflake." />}
       {!loading && !error && requests.length === 0 && <EmptyState message="No approval requests found." />}
 
-      <div className="space-y-2">
+      <div className="space-y-3">
         {requests.map((r) => (
           <ApprovalCard key={r.REQUEST_ID} request={r} isTestArtifact={testArtifactIds.includes(r.REQUEST_ID)} onReviewed={load} />
         ))}

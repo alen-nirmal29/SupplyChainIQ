@@ -67,10 +67,23 @@ export async function getConnection(): Promise<snowflake.Connection> {
   }
 
   connectingPromise = new Promise((resolve, reject) => {
-    const connection = snowflake.createConnection(buildConnectionOptions());
+    let options: snowflake.ConnectionOptions;
+    try {
+      options = buildConnectionOptions();
+    } catch (err) {
+      connectingPromise = null;
+      console.error("[snowflake] connection config error:", err);
+      reject(err instanceof Error ? err : new Error("Snowflake connection configuration is invalid."));
+      return;
+    }
+
+    const connection = snowflake.createConnection(options);
     connection.connect((err, conn) => {
       connectingPromise = null;
       if (err) {
+        // Server-side only (terminal), never sent to the browser. Safe to
+        // log in full here -- this never crosses the client boundary.
+        console.error("[snowflake] connection failed:", err);
         reject(new Error("Snowflake connection failed."));
         return;
       }

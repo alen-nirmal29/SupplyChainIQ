@@ -2,13 +2,15 @@ import AgentChat from "@/components/ask/AgentChat";
 
 export default function AskPage() {
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold text-white">Ask SupplyChainIQ</h1>
-        <p className="text-sm text-slate-400">
+    <div className="page-shell">
+      <div className="page-header">
+        <div>
+        <h1 className="page-title">Ask SupplyChainIQ</h1>
+        <p className="page-description">
           Natural-language conversation with the SupplyChainIQ Cortex Agent. Business logic runs entirely in
           Snowflake.
         </p>
+        </div>
       </div>
       <AgentChat />
     </div>

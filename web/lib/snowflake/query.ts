@@ -26,6 +26,7 @@ export async function query<T = Record<string, unknown>>(
       binds,
       complete: (err, _stmt, rows) => {
         if (err) {
+          console.error("[snowflake] query failed:", err, "\nSQL:", sqlText);
           reject(new Error("Snowflake query failed."));
           return;
         }

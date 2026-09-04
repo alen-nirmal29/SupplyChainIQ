@@ -14,14 +14,14 @@ export default function StockoutTimingChart({ summary }: StockoutTimingChartProp
   ];
 
   return (
-    <div>
-      <p className="mb-2 text-xs text-slate-500">How soon are these predicted shortages expected?</p>
+    <div className="surface p-4 sm:p-5">
+      <p className="mb-4 text-xs font-medium text-slate-500">How soon are these predicted shortages expected?</p>
       <ResponsiveContainer width="100%" height={220}>
-        <BarChart data={data}>
-          <XAxis dataKey="timing" stroke="#64748b" fontSize={12} />
-          <YAxis stroke="#64748b" fontSize={12} allowDecimals={false} />
-          <Tooltip contentStyle={{ background: "#111a2e", border: "1px solid #1e2a44" }} />
-          <Bar dataKey="warnings" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+        <BarChart data={data} margin={{ left: -12, right: 12, top: 4 }}>
+          <XAxis dataKey="timing" stroke="#64748b" fontSize={11} axisLine={false} tickLine={false} />
+          <YAxis stroke="#64748b" fontSize={11} allowDecimals={false} axisLine={false} tickLine={false} />
+          <Tooltip cursor={{ fill: "rgba(139, 92, 246, 0.05)" }} contentStyle={{ background: "rgba(255,255,255,.98)", color: "#172554", border: "1px solid rgba(196,181,253,.75)", borderRadius: 10, boxShadow: "0 16px 40px rgba(70,100,140,.16)" }} />
+          <Bar dataKey="warnings" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

@@ -28,16 +28,16 @@ export default function ActionsPage() {
   useEffect(load, []);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="page-shell">
+      <div className="page-header">
         <div>
-          <h1 className="text-xl font-semibold text-white">Actions</h1>
-          <p className="text-sm text-slate-400">
+          <h1 className="page-title">Actions</h1>
+          <p className="page-description">
             Sourced directly from ACTION.INTERVENTION_ACTION_COMMAND. Dispatch is always Agent-tool-mediated (never a
             direct button in this UI).
           </p>
         </div>
-        <button onClick={load} className="rounded-md border border-control-border bg-control-panel px-3 py-1.5 text-sm text-slate-200 hover:bg-white/5">
+        <button onClick={load} className="button-secondary shrink-0">
           Refresh
         </button>
       </div>
@@ -48,7 +48,7 @@ export default function ActionsPage() {
         <EmptyState message='No demo actions have been dispatched yet. Use Ask SupplyChainIQ: "Execute approved request <REQUEST_ID>."' />
       )}
 
-      <div className="space-y-2">
+      <div className="space-y-3">
         {actions.map((a) => (
           <ActionCard key={a.ACTION_ID} action={a} />
         ))}

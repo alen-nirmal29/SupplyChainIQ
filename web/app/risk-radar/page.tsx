@@ -16,21 +16,24 @@ import type { ConfirmedRisk, ConfirmedRiskSummary } from "@/types/risk";
 import type { ForecastedStockoutRisk, ForecastedStockoutSummary } from "@/types/forecast";
 
 type Tab = "confirmed" | "predictive";
+const PAGE_SIZE = 20;
 
 export default function RiskRadarPage() {
   const [tab, setTab] = useState<Tab>("confirmed");
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-white">Risk Radar</h1>
-        <p className="text-sm text-slate-400">
+    <div className="page-shell">
+      <div className="page-header">
+        <div>
+        <h1 className="page-title">Risk Radar</h1>
+        <p className="page-description">
           Risk Radar evaluates current governed supply-chain data when this page loads or is refreshed; it is not
           continuous monitoring.
         </p>
+        </div>
       </div>
 
-      <div className="flex gap-2 border-b border-control-border">
+      <div className="flex w-full gap-1 rounded-xl border border-sky-200/80 bg-white/65 p-1 shadow-sm sm:w-fit">
         <TabButton active={tab === "confirmed"} onClick={() => setTab("confirmed")}>
           Confirmed Risks
         </TabButton>
@@ -48,8 +51,10 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-2 text-sm font-medium transition-colors ${
-        active ? "border-b-2 border-control-accent text-white" : "text-slate-400 hover:text-slate-200"
+      className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition duration-200 sm:flex-none ${
+        active
+          ? "bg-blue-500 text-white shadow-md shadow-blue-200/80"
+          : "text-slate-500 hover:bg-sky-50 hover:text-blue-700"
       }`}
     >
       {children}
@@ -63,6 +68,11 @@ function ConfirmedRisksTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [severity, setSeverity] = useState("ALL");
+  const [supplier, setSupplier] = useState("ALL");
+  const [plant, setPlant] = useState("ALL");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     setLoading(true);
@@ -79,11 +89,51 @@ function ConfirmedRisksTab() {
       .finally(() => setLoading(false));
   }, []);
 
-  const selected = useMemo(() => risks.find((r) => r.RISK_ID === selectedId) ?? null, [risks, selectedId]);
+  const suppliers = useMemo(() => [...new Set(risks.map((risk) => risk.SUPPLIER_NAME))].sort(), [risks]);
+  const plants = useMemo(() => [...new Set(risks.map((risk) => risk.PLANT_NAME))].sort(), [risks]);
+  const filteredRisks = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return risks.filter((risk) => {
+      const matchesSearch =
+        !term ||
+        [
+          risk.RISK_ID,
+          risk.SUPPLIER_ID,
+          risk.SUPPLIER_NAME,
+          risk.PART_ID,
+          risk.PART_DESCRIPTION,
+          risk.PLANT_ID,
+          risk.PLANT_NAME,
+        ].some((value) => value?.toLowerCase().includes(term));
+      return (
+        matchesSearch &&
+        (severity === "ALL" || risk.SEVERITY === severity) &&
+        (supplier === "ALL" || risk.SUPPLIER_NAME === supplier) &&
+        (plant === "ALL" || risk.PLANT_NAME === plant)
+      );
+    });
+  }, [risks, search, severity, supplier, plant]);
+  const pageCount = Math.max(1, Math.ceil(filteredRisks.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const visibleRisks = useMemo(
+    () => filteredRisks.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [filteredRisks, currentPage]
+  );
+  const selected = useMemo(
+    () => visibleRisks.find((risk) => risk.RISK_ID === selectedId) ?? visibleRisks[0] ?? null,
+    [visibleRisks, selectedId]
+  );
+  const resetConfirmedFilters = () => {
+    setSearch("");
+    setSeverity("ALL");
+    setSupplier("ALL");
+    setPlant("ALL");
+    setPage(1);
+  };
 
   return (
-    <div className="space-y-4">
-      <p className="text-xs text-slate-500">
+    <div className="space-y-5">
+      <p className="callout border-l-2 border-l-blue-400/70 bg-blue-50/45 text-xs">
         Confirmed risks are based on known open customer demand and current operational state.
       </p>
 
@@ -91,12 +141,80 @@ function ConfirmedRisksTab() {
       {error && <ErrorState message="Risk Radar is unavailable until its governed RISK views are deployed to DEV." />}
 
       {summary && (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+        <div className="metric-grid grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
           <MetricCard label="Active risks" value={summary.ACTIVE_RISKS} />
           <MetricCard label="Critical" value={summary.CRITICAL_RISKS} />
           <MetricCard label="High" value={summary.HIGH_RISKS} />
           <MetricCard label="Medium" value={summary.MEDIUM_RISKS} />
           <MetricCard label="Revenue exposure" value={formatCurrencyINR(summary.REVENUE_EXPOSURE)} />
+        </div>
+      )}
+
+      {risks.length > 0 && (
+        <div className="surface space-y-4 p-4 sm:p-5">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
+            <label className="min-w-0 flex-1">
+              <span className="mb-1.5 block text-xs font-semibold text-slate-600">Search confirmed risks</span>
+              <input
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search risk, supplier, part, or plant"
+                className="field w-full"
+              />
+            </label>
+            <label className="xl:w-44">
+              <span className="mb-1.5 block text-xs font-semibold text-slate-600">Severity</span>
+              <select
+                value={severity}
+                onChange={(event) => {
+                  setSeverity(event.target.value);
+                  setPage(1);
+                }}
+                className="field w-full"
+              >
+                <option value="ALL">All severities</option>
+                <option value="CRITICAL">Critical</option>
+                <option value="HIGH">High</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="LOW">Low</option>
+              </select>
+            </label>
+            <label className="xl:w-56">
+              <span className="mb-1.5 block text-xs font-semibold text-slate-600">Supplier</span>
+              <select
+                value={supplier}
+                onChange={(event) => {
+                  setSupplier(event.target.value);
+                  setPage(1);
+                }}
+                className="field w-full"
+              >
+                <option value="ALL">All suppliers</option>
+                {suppliers.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </label>
+            <label className="xl:w-56">
+              <span className="mb-1.5 block text-xs font-semibold text-slate-600">Plant</span>
+              <select
+                value={plant}
+                onChange={(event) => {
+                  setPlant(event.target.value);
+                  setPage(1);
+                }}
+                className="field w-full"
+              >
+                <option value="ALL">All plants</option>
+                {plants.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </label>
+            <button type="button" onClick={resetConfirmedFilters} className="button-secondary shrink-0">
+              Clear filters
+            </button>
+          </div>
+          <ResultSummary filteredCount={filteredRisks.length} totalCount={risks.length} page={currentPage} />
         </div>
       )}
 
@@ -106,7 +224,14 @@ function ConfirmedRisksTab() {
 
       {risks.length > 0 && (
         <>
-          <ConfirmedRiskTable risks={risks} selectedId={selectedId} onSelect={setSelectedId} />
+          {filteredRisks.length > 0 ? (
+            <>
+              <ConfirmedRiskTable risks={visibleRisks} selectedId={selected?.RISK_ID ?? null} onSelect={setSelectedId} />
+              <Pagination page={currentPage} pageCount={pageCount} onPageChange={setPage} />
+            </>
+          ) : (
+            <EmptyState message="No confirmed risks match the selected filters." />
+          )}
           {selected && <ConfirmedRiskDetail risk={selected} />}
         </>
       )}
@@ -120,6 +245,10 @@ function PredictiveWarningsTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [plant, setPlant] = useState("ALL");
+  const [horizon, setHorizon] = useState("ALL");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     setLoading(true);
@@ -137,14 +266,44 @@ function PredictiveWarningsTab() {
       .finally(() => setLoading(false));
   }, []);
 
-  const selected = useMemo(
-    () => risks.find((r) => forecastRiskKey(r) === selectedKey) ?? null,
-    [risks, selectedKey]
+  const plants = useMemo(() => [...new Set(risks.map((risk) => risk.PLANT_NAME))].sort(), [risks]);
+  const filteredRisks = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return risks.filter((risk) => {
+      const days = risk.DAYS_TO_PREDICTED_STOCKOUT;
+      const matchesSearch =
+        !term ||
+        [risk.PART_ID, risk.PART_DESCRIPTION, risk.PLANT_ID, risk.PLANT_NAME].some((value) =>
+          value?.toLowerCase().includes(term)
+        );
+      const matchesHorizon =
+        horizon === "ALL" ||
+        (horizon === "DAY0" && days === 0) ||
+        (horizon === "DAY1_7" && days != null && days >= 1 && days <= 7) ||
+        (horizon === "DAY8_14" && days != null && days >= 8 && days <= 14);
+      return matchesSearch && matchesHorizon && (plant === "ALL" || risk.PLANT_NAME === plant);
+    });
+  }, [risks, search, plant, horizon]);
+  const pageCount = Math.max(1, Math.ceil(filteredRisks.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const visibleRisks = useMemo(
+    () => filteredRisks.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [filteredRisks, currentPage]
   );
+  const selected = useMemo(
+    () => visibleRisks.find((risk) => forecastRiskKey(risk) === selectedKey) ?? visibleRisks[0] ?? null,
+    [visibleRisks, selectedKey]
+  );
+  const resetPredictiveFilters = () => {
+    setSearch("");
+    setPlant("ALL");
+    setHorizon("ALL");
+    setPage(1);
+  };
 
   return (
-    <div className="space-y-4">
-      <p className="text-xs text-slate-500">
+    <div className="space-y-5">
+      <p className="callout border-l-2 border-l-violet-400/70 bg-violet-50/45 text-xs">
         Potential future stockouts identified from Snowflake ML demand forecasts. These are predictive signals, not
         confirmed customer-order shortages.
       </p>
@@ -156,6 +315,59 @@ function PredictiveWarningsTab() {
 
       {summary && <ForecastSummary summary={summary} />}
 
+      {risks.length > 0 && (
+        <div className="surface space-y-4 p-4 sm:p-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+            <label className="min-w-0 flex-1">
+              <span className="mb-1.5 block text-xs font-semibold text-slate-600">Search predictive warnings</span>
+              <input
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search part or plant"
+                className="field w-full"
+              />
+            </label>
+            <label className="lg:w-60">
+              <span className="mb-1.5 block text-xs font-semibold text-slate-600">Plant</span>
+              <select
+                value={plant}
+                onChange={(event) => {
+                  setPlant(event.target.value);
+                  setPage(1);
+                }}
+                className="field w-full"
+              >
+                <option value="ALL">All plants</option>
+                {plants.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </label>
+            <label className="lg:w-52">
+              <span className="mb-1.5 block text-xs font-semibold text-slate-600">Stockout horizon</span>
+              <select
+                value={horizon}
+                onChange={(event) => {
+                  setHorizon(event.target.value);
+                  setPage(1);
+                }}
+                className="field w-full"
+              >
+                <option value="ALL">All horizons</option>
+                <option value="DAY0">Immediate / Day 0</option>
+                <option value="DAY1_7">1–7 days</option>
+                <option value="DAY8_14">8–14 days</option>
+              </select>
+            </label>
+            <button type="button" onClick={resetPredictiveFilters} className="button-secondary shrink-0">
+              Clear filters
+            </button>
+          </div>
+          <ResultSummary filteredCount={filteredRisks.length} totalCount={risks.length} page={currentPage} />
+        </div>
+      )}
+
       {!loading && !error && risks.length === 0 && (
         <EmptyState message="No forecast-only early warnings currently identified beyond confirmed Risk Radar." />
       )}
@@ -163,10 +375,43 @@ function PredictiveWarningsTab() {
       {summary && risks.length > 0 && (
         <>
           <StockoutTimingChart summary={summary} />
-          <ForecastRiskTable risks={risks} selectedKey={selectedKey} onSelect={setSelectedKey} />
+          {filteredRisks.length > 0 ? (
+            <>
+              <ForecastRiskTable risks={visibleRisks} selectedKey={selected ? forecastRiskKey(selected) : null} onSelect={setSelectedKey} />
+              <Pagination page={currentPage} pageCount={pageCount} onPageChange={setPage} />
+            </>
+          ) : (
+            <EmptyState message="No predictive early warnings match the selected filters." />
+          )}
           {selected && <ForecastRiskDetail risk={selected} />}
         </>
       )}
+    </div>
+  );
+}
+
+function ResultSummary({ filteredCount, totalCount, page }: { filteredCount: number; totalCount: number; page: number }) {
+  const first = filteredCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const last = Math.min(page * PAGE_SIZE, filteredCount);
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/70 pt-3 text-xs text-slate-500">
+      <span>Showing {first}–{last} of {filteredCount} matching records</span>
+      <span>{totalCount} total records</span>
+    </div>
+  );
+}
+
+function Pagination({ page, pageCount, onPageChange }: { page: number; pageCount: number; onPageChange: (page: number) => void }) {
+  if (pageCount <= 1) return null;
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <button type="button" onClick={() => onPageChange(page - 1)} disabled={page === 1} className="button-secondary">
+        Previous
+      </button>
+      <span className="text-xs font-medium text-slate-500">Page {page} of {pageCount}</span>
+      <button type="button" onClick={() => onPageChange(page + 1)} disabled={page === pageCount} className="button-secondary">
+        Next
+      </button>
     </div>
   );
 }

@@ -10,39 +10,41 @@ interface ConfirmedRiskTableProps {
 
 export default function ConfirmedRiskTable({ risks, selectedId, onSelect }: ConfirmedRiskTableProps) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-control-border">
-      <table className="min-w-full divide-y divide-control-border text-sm">
-        <thead className="bg-control-panel text-left text-xs uppercase text-slate-400">
+    <div className="table-shell">
+      <table className="data-table">
+        <thead>
           <tr>
-            <th className="px-3 py-2">Rank</th>
-            <th className="px-3 py-2">Severity</th>
-            <th className="px-3 py-2">Supplier</th>
-            <th className="px-3 py-2">Part</th>
-            <th className="px-3 py-2">Plant</th>
-            <th className="px-3 py-2 text-right">Shortage</th>
-            <th className="px-3 py-2 text-right">Score</th>
-            <th className="px-3 py-2 text-right">Revenue exposure</th>
+            <th>Rank</th>
+            <th>Severity</th>
+            <th>Supplier</th>
+            <th>Part</th>
+            <th>Plant</th>
+            <th className="text-right">Shortage</th>
+            <th className="text-right">Score</th>
+            <th className="text-right">Revenue exposure</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-control-border">
+        <tbody>
           {risks.map((risk) => (
             <tr
               key={risk.RISK_ID}
               onClick={() => onSelect(risk.RISK_ID)}
               className={`cursor-pointer transition-colors ${
-                risk.RISK_ID === selectedId ? "bg-control-accent/10" : "hover:bg-white/5"
+                risk.RISK_ID === selectedId
+                  ? "bg-blue-50 shadow-[inset_3px_0_0_rgba(59,130,246,0.9)]"
+                  : "hover:bg-sky-50/70"
               }`}
             >
-              <td className="px-3 py-2 text-slate-300">{risk.RISK_RANK}</td>
-              <td className="px-3 py-2">
+              <td className="font-mono text-xs text-slate-500">{risk.RISK_RANK}</td>
+              <td>
                 <StatusBadge status={risk.SEVERITY} />
               </td>
-              <td className="px-3 py-2 text-slate-200">{risk.SUPPLIER_NAME}</td>
-              <td className="px-3 py-2 text-slate-200">{risk.PART_ID}</td>
-              <td className="px-3 py-2 text-slate-200">{risk.PLANT_NAME}</td>
-              <td className="px-3 py-2 text-right text-slate-200">{formatQty(risk.SHORTAGE_QUANTITY)}</td>
-              <td className="px-3 py-2 text-right text-slate-200">{risk.RISK_SCORE}/100</td>
-              <td className="px-3 py-2 text-right text-slate-200">{formatCurrencyINR(risk.REVENUE_EXPOSURE)}</td>
+              <td className="font-medium text-slate-800">{risk.SUPPLIER_NAME}</td>
+              <td className="font-mono text-xs text-slate-700">{risk.PART_ID}</td>
+              <td>{risk.PLANT_NAME}</td>
+              <td className="text-right tabular-nums">{formatQty(risk.SHORTAGE_QUANTITY)}</td>
+              <td className="text-right font-semibold tabular-nums text-[#10213f]">{risk.RISK_SCORE}/100</td>
+              <td className="text-right tabular-nums">{formatCurrencyINR(risk.REVENUE_EXPOSURE)}</td>
             </tr>
           ))}
         </tbody>

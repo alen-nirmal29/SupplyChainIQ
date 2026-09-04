@@ -47,26 +47,26 @@ export default function ApprovalCard({ request, isTestArtifact, onReviewed }: Ap
   };
 
   return (
-    <div className="rounded-lg border border-control-border bg-control-panel">
+    <div className={`surface overflow-hidden transition duration-200 ${open ? "border-violet-300 bg-violet-50/40" : "hover:border-violet-200 hover:bg-white"}`}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+        className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left sm:px-5"
       >
-        <div className="flex flex-wrap items-center gap-2 text-sm">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm leading-6">
           {isTestArtifact && <span className="text-xs text-slate-500">[Pre-fix test artifact]</span>}
           <StatusBadge status={request.REQUEST_STATUS} />
           {EXEC_LABEL[request.EXECUTION_STATUS] && <StatusBadge status={request.EXECUTION_STATUS} label={EXEC_LABEL[request.EXECUTION_STATUS]} />}
-          <span className="text-slate-200">{request.REQUEST_ID}</span>
-          <span className="text-slate-400">
+          <span className="font-mono text-xs font-medium text-slate-700">{request.REQUEST_ID}</span>
+          <span className="text-slate-500">
             {request.SUPPLIER_NAME} / {request.PART_DESCRIPTION} / {request.PLANT_NAME} &mdash;{" "}
             {request.SELECTED_INTERVENTION_TYPE} (rank {request.RECOMMENDATION_RANK})
           </span>
         </div>
-        <span className="text-slate-500">{open ? "\u2212" : "+"}</span>
+        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-violet-200 bg-violet-50 text-base text-violet-500 transition-transform ${open ? "rotate-180" : ""}`}>{open ? "\u2212" : "+"}</span>
       </button>
 
       {open && (
-        <div className="border-t border-control-border px-4 py-3 text-sm text-slate-300">
+        <div className="space-y-1 border-t border-violet-200/70 bg-white/65 px-4 py-4 text-sm leading-6 text-slate-700 sm:px-5">
           <p>
             <strong>Requested by:</strong> {request.REQUESTED_BY} ({request.REQUESTED_ROLE}) at{" "}
             {formatDateTime(request.REQUESTED_AT)}
@@ -87,34 +87,34 @@ export default function ApprovalCard({ request, isTestArtifact, onReviewed }: Ap
             </p>
           )}
 
-          <details className="mt-2">
-            <summary className="cursor-pointer text-xs text-slate-500">
+          <details className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+            <summary className="cursor-pointer text-xs font-medium text-slate-500 transition hover:text-blue-700">
               Recommendation snapshot (immutable, at time of submission)
             </summary>
-            <pre className="mt-1 max-h-64 overflow-auto rounded bg-black/30 p-2 text-xs">
+            <pre className="code-surface mt-3 max-h-64">
               {JSON.stringify(request.RECOMMENDATION_SNAPSHOT, null, 2)}
             </pre>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-2 break-all text-xs text-slate-500">
               RECOMMENDATION_HASH: <code>{request.RECOMMENDATION_HASH}</code>
             </p>
           </details>
 
           {request.REQUEST_STATUS === "PENDING" && (
-            <div className="mt-4 space-y-2">
+            <div className="mt-5 space-y-3">
               {!pendingDecision ? (
-                <div className="flex gap-2">
-                  <button onClick={() => setPendingDecision("APPROVE")} className="rounded-md bg-emerald-600/80 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-600">
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => setPendingDecision("APPROVE")} className="inline-flex min-h-9 items-center rounded-lg bg-emerald-500/90 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-500">
                     Approve
                   </button>
-                  <button onClick={() => setPendingDecision("REJECT")} className="rounded-md bg-red-600/80 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600">
+                  <button onClick={() => setPendingDecision("REJECT")} className="inline-flex min-h-9 items-center rounded-lg bg-red-500/90 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-red-500">
                     Reject
                   </button>
-                  <button onClick={() => setPendingDecision("CANCEL")} className="rounded-md bg-slate-600/80 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-600">
+                  <button onClick={() => setPendingDecision("CANCEL")} className="inline-flex min-h-9 items-center rounded-lg bg-slate-600/80 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-600">
                     Cancel
                   </button>
                 </div>
               ) : (
-                <div className="rounded-md border border-control-border bg-black/20 p-3">
+                <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4">
                   <p className="mb-2 text-sm">
                     Confirm <strong>{pendingDecision}</strong> for request <code>{request.REQUEST_ID}</code>?
                   </p>
@@ -122,13 +122,13 @@ export default function ApprovalCard({ request, isTestArtifact, onReviewed }: Ap
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
                     placeholder="Optional comment"
-                    className="mb-2 w-full rounded-md border border-control-border bg-control-panel px-2 py-1.5 text-sm text-white placeholder:text-slate-500"
+                    className="field mb-3 w-full"
                   />
                   <div className="flex gap-2">
                     <button
                       onClick={submitDecision}
                       disabled={submitting}
-                      className="rounded-md bg-control-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-600 disabled:opacity-50"
+                      className="button-primary min-h-9 px-3.5 py-1.5 text-xs"
                     >
                       {submitting ? "Submitting..." : `Confirm ${pendingDecision.toLowerCase()}`}
                     </button>
@@ -137,12 +137,12 @@ export default function ApprovalCard({ request, isTestArtifact, onReviewed }: Ap
                         setPendingDecision(null);
                         setError(null);
                       }}
-                      className="rounded-md border border-control-border px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5"
+                      className="button-secondary min-h-9 px-3.5 py-1.5 text-xs"
                     >
                       Dismiss
                     </button>
                   </div>
-                  {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
+                  {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
                 </div>
               )}
             </div>

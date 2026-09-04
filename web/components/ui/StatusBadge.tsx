@@ -1,13 +1,13 @@
 const SEVERITY_COLORS: Record<string, string> = {
-  CRITICAL: "bg-red-500/20 text-red-300 border-red-500/40",
-  HIGH: "bg-orange-500/20 text-orange-300 border-orange-500/40",
-  MEDIUM: "bg-yellow-500/20 text-yellow-300 border-yellow-500/40",
-  LOW: "bg-sky-500/20 text-sky-300 border-sky-500/40",
-  PENDING: "bg-yellow-500/20 text-yellow-300 border-yellow-500/40",
-  APPROVED: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
-  REJECTED: "bg-slate-500/20 text-slate-300 border-slate-500/40",
-  CANCELLED: "bg-slate-500/20 text-slate-300 border-slate-500/40",
-  DISPATCHED_DEMO: "bg-sky-500/20 text-sky-300 border-sky-500/40",
+  CRITICAL: "bg-red-50 text-red-700 border-red-200 before:bg-red-500",
+  HIGH: "bg-orange-50 text-orange-700 border-orange-200 before:bg-orange-500",
+  MEDIUM: "bg-amber-50 text-amber-700 border-amber-200 before:bg-amber-500",
+  LOW: "bg-sky-50 text-sky-700 border-sky-200 before:bg-sky-500",
+  PENDING: "bg-amber-50 text-amber-700 border-amber-200 before:bg-amber-500",
+  APPROVED: "bg-emerald-50 text-emerald-700 border-emerald-200 before:bg-emerald-500",
+  REJECTED: "bg-slate-100 text-slate-700 border-slate-200 before:bg-slate-500",
+  CANCELLED: "bg-slate-100 text-slate-700 border-slate-200 before:bg-slate-500",
+  DISPATCHED_DEMO: "bg-sky-50 text-sky-700 border-sky-200 before:bg-sky-500",
 };
 
 interface StatusBadgeProps {
@@ -17,9 +17,9 @@ interface StatusBadgeProps {
 }
 
 export default function StatusBadge({ status, label }: StatusBadgeProps) {
-  const classes = SEVERITY_COLORS[status] ?? "bg-slate-500/20 text-slate-300 border-slate-500/40";
+  const classes = SEVERITY_COLORS[status] ?? "bg-slate-100 text-slate-700 border-slate-200 before:bg-slate-500";
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${classes}`}>
+    <span className={`before:content-[''] inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold tracking-wide before:h-1.5 before:w-1.5 before:rounded-full ${classes}`}>
       {label ?? status}
     </span>
   );

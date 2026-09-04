@@ -38,14 +38,17 @@ export default function RootCauseChain({ risk }: RootCauseChainProps) {
 
   return (
     <div>
-      <h3 className="mb-3 text-sm font-semibold text-white">Root cause / impact chain</h3>
-      <div className="space-y-2">
-        {stages.map((s) => (
-          <div key={s.stage} className="rounded-lg border border-control-border bg-control-panel p-3">
-            <div className="text-sm font-medium text-white">
+      <h3 className="section-heading mb-4">Root cause / impact chain</h3>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+        {stages.map((s, index) => (
+          <div key={s.stage} className="relative rounded-xl border border-sky-200/80 bg-white/70 p-4 transition hover:-translate-y-0.5 hover:border-blue-300 hover:bg-blue-50/60 hover:shadow-md">
+            <div className="mb-3 flex h-7 w-7 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-xs font-semibold text-blue-600">
+              {index + 1}
+            </div>
+            <div className="text-sm font-semibold leading-5 text-[#183052]">
               {s.stage} &mdash; {s.title}
             </div>
-            <div className="text-xs text-slate-400">{s.detail}</div>
+            <div className="mt-1.5 text-xs leading-5 text-slate-500">{s.detail}</div>
           </div>
         ))}
       </div>

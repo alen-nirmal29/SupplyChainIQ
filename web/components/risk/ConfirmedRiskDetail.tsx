@@ -33,11 +33,11 @@ export default function ConfirmedRiskDetail({ risk }: ConfirmedRiskDetailProps) 
   };
 
   return (
-    <div className="space-y-6 rounded-lg border border-control-border bg-control-panel/40 p-5">
+    <div className="surface-strong space-y-8 p-5 sm:p-7">
       <div>
-        <h3 className="text-sm font-semibold text-white">Risk summary</h3>
-        <p className="mb-3 text-xs text-slate-400">{risk.PRIMARY_RISK_REASON}</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <h3 className="section-heading">Risk summary</h3>
+        <p className="mb-4 mt-1 text-xs leading-5 text-slate-500">{risk.PRIMARY_RISK_REASON}</p>
+        <div className="metric-grid grid grid-cols-2 gap-3 sm:grid-cols-4">
           <MetricCard label="Risk score" value={`${risk.RISK_SCORE}/100`} hint={risk.SEVERITY} />
           <MetricCard label="Shortage" value={formatQty(risk.SHORTAGE_QUANTITY)} />
           <MetricCard label="First customer due" value={risk.FIRST_CUSTOMER_DUE_DATE ?? "\u2014"} />
@@ -50,8 +50,8 @@ export default function ConfirmedRiskDetail({ risk }: ConfirmedRiskDetailProps) 
       <RootCauseChain risk={risk} />
 
       <div>
-        <h3 className="mb-3 text-sm font-semibold text-white">Key evidence</h3>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <h3 className="section-heading mb-3">Key evidence</h3>
+        <div className="metric-grid grid grid-cols-2 gap-3 sm:grid-cols-5">
           <MetricCard label="Available" value={formatQty(risk.AVAILABLE_QUANTITY)} />
           <MetricCard label="Safety stock" value={formatQty(risk.SAFETY_STOCK)} />
           <MetricCard label="Requirement" value={formatQty(risk.REQUIREMENT_QUANTITY)} />
@@ -67,7 +67,7 @@ export default function ConfirmedRiskDetail({ risk }: ConfirmedRiskDetailProps) 
         <div>
           <button
             onClick={loadInterventions}
-            className="rounded-md bg-control-accent px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
+            className="button-primary"
           >
             Load intervention comparison
           </button>
@@ -78,7 +78,7 @@ export default function ConfirmedRiskDetail({ risk }: ConfirmedRiskDetailProps) 
         <InterventionComparison options={options} />
       )}
 
-      <div className="rounded-lg border border-control-border bg-control-panel p-4 text-xs text-slate-400">
+      <div className="callout border-l-2 border-l-emerald-400 bg-emerald-50/50 text-xs leading-5">
         Governed Snowflake data: Yes &middot; Deterministic risk score: Yes &middot; Deterministic intervention
         ranking: Yes &middot; Human approval required: Yes &middot; Fresh-state validation before action: Yes &middot;
         Auditable workflow: Yes

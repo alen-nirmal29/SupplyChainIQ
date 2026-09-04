@@ -144,6 +144,16 @@ def render(owner_conn):
         st.cache_data.clear()
         st.rerun()
 
+    tab_confirmed, tab_predictive = st.tabs(["Confirmed Risks", "Predictive Early Warnings"])
+    with tab_confirmed:
+        _render_confirmed_risks(owner_conn)
+    with tab_predictive:
+        _render_predictive_warnings(owner_conn)
+
+
+def _render_confirmed_risks(owner_conn):
+    st.caption("Confirmed risks are based on known open customer demand and current operational state.")
+
     try:
         summary = sd.risk_radar_summary(owner_conn)
         all_records = sd.risk_radar(owner_conn).to_dict("records")
@@ -303,4 +313,215 @@ def _render_detail(owner_conn, risk):
     st.code(
         f"Why is {risk['PART_ID']} at {risk['PLANT_NAME']} at risk, and why is the recommended option preferred?",
         language=None,
+    )
+
+
+def _fmt_qty(value):
+    return f"{value:,.0f}" if isinstance(value, Number) else "—"
+
+
+def _predictive_key(risk):
+    return f"{risk['PART_ID']}|{risk['PLANT_ID']}"
+
+
+def _predictive_label(risk):
+    plant = risk.get("PLANT_NAME") or risk["PLANT_ID"]
+    days = risk.get("DAYS_TO_PREDICTED_STOCKOUT")
+    when = "immediate" if days == 0 else f"in {days}d" if isinstance(days, Number) else "timing unknown"
+    return f"{risk['PART_ID']} at {plant} — predicted stockout {when}"
+
+
+def _default_predictive_selection(records):
+    """Phase 10b default-selection rule: prefer a genuinely future warning
+    (PREDICTED_STOCKOUT_DATE > REFERENCE_DATE), earliest such stockout
+    first, then highest forecasted shortage as the tie-break -- so the demo
+    does not default to a Day-0 / zero-inventory case when a stronger
+    forward-looking example exists."""
+    if not records:
+        return None
+    future = [r for r in records if isinstance(r.get("DAYS_TO_PREDICTED_STOCKOUT"), Number) and r["DAYS_TO_PREDICTED_STOCKOUT"] > 0]
+    pool = future if future else records
+    return sorted(
+        pool,
+        key=lambda r: (r["DAYS_TO_PREDICTED_STOCKOUT"], -(r.get("FORECASTED_SHORTAGE_QUANTITY") or 0)),
+    )[0]
+
+
+def _render_predictive_warnings(owner_conn):
+    st.markdown("### Predictive Early Warnings")
+    st.caption(
+        "Potential future stockouts identified from Snowflake ML demand forecasts. "
+        "These are predictive signals, not confirmed customer-order shortages."
+    )
+
+    try:
+        summary = sd.forecasted_stockout_summary(owner_conn)
+        records = sd.forecasted_stockout_risks(owner_conn).to_dict("records")
+    except Exception as exc:
+        st.error("Predictive Early Warnings are unavailable until the governed forecast objects are deployed to DEV.")
+        with st.expander("Technical details"):
+            st.exception(exc)
+        return
+
+    day0 = summary.get("DAY0", 0) or 0
+    day1_2 = summary.get("DAY1_2", 0) or 0
+    day3_7 = summary.get("DAY3_7", 0) or 0
+    day8_14 = summary.get("DAY8_14", 0) or 0
+
+    metrics = st.columns(4)
+    metrics[0].metric("Forecasted warnings", summary.get("TOTAL_WARNINGS", 0))
+    metrics[1].metric("Immediate / Day 0", day0)
+    metrics[2].metric("1–7 day warnings", day1_2 + day3_7)
+    metrics[3].metric("8–14 day warnings", day8_14)
+
+    accepted_series = summary.get("ACCEPTED_SERIES")
+    if accepted_series is not None:
+        st.caption(f"Accepted forecast series (model quality gate): {accepted_series:,}")
+
+    if not records:
+        st.success("No forecast-only early warnings currently identified beyond confirmed Risk Radar.")
+        return
+
+    st.caption("How soon are these predicted shortages expected?")
+    st.bar_chart(
+        {
+            "Timing": ["Day 0", "Day 1–2", "Day 3–7", "Day 8–14"],
+            "Warnings": [day0, day1_2, day3_7, day8_14],
+        },
+        x="Timing",
+        y="Warnings",
+        height=260,
+    )
+
+    with st.expander("Filters", expanded=False):
+        plants = sorted({r.get("PLANT_NAME") or r["PLANT_ID"] for r in records})
+        c1, c2, c3 = st.columns(3)
+        plant_filter = c1.multiselect("Plant", plants, default=plants, key="predictive_plant_filter")
+        part_query = c2.text_input("Part search", "", key="predictive_part_search")
+        max_days = max((r.get("DAYS_TO_PREDICTED_STOCKOUT") or 0) for r in records)
+        days_range = c3.slider("Days to stockout", 0, int(max_days), (0, int(max_days)), key="predictive_days_range")
+
+    filtered = [
+        r for r in records
+        if (r.get("PLANT_NAME") or r["PLANT_ID"]) in plant_filter
+        and (part_query.strip().upper() in r["PART_ID"].upper() if part_query.strip() else True)
+        and days_range[0] <= (r.get("DAYS_TO_PREDICTED_STOCKOUT") or 0) <= days_range[1]
+    ]
+    if not filtered:
+        st.info("No forecasted warnings match the selected filters.")
+        return
+
+    st.markdown("### Forecast-only early warnings")
+    table_rows = [
+        {
+            "Part": r["PART_ID"],
+            "Plant": r.get("PLANT_NAME") or r["PLANT_ID"],
+            "Predicted stockout": str(r.get("PREDICTED_STOCKOUT_DATE") or "—"),
+            "Days to stockout": r.get("DAYS_TO_PREDICTED_STOCKOUT"),
+            "Usable inventory": r.get("CURRENT_USABLE_QUANTITY"),
+            "Confirmed demand": r.get("CONFIRMED_DEMAND_QUANTITY"),
+            "Forecast demand": round(r["FORECAST_DEMAND_QUANTITY"], 1) if isinstance(r.get("FORECAST_DEMAND_QUANTITY"), Number) else None,
+            "Expected inbound": r.get("EXPECTED_INBOUND_QUANTITY"),
+            "Forecasted shortage": round(r["FORECASTED_SHORTAGE_QUANTITY"], 1) if isinstance(r.get("FORECASTED_SHORTAGE_QUANTITY"), Number) else None,
+            "Model quality (SMAPE)": f"{r['SMAPE'] * 100:.1f}%" if isinstance(r.get("SMAPE"), Number) else "—",
+        }
+        for r in filtered
+    ]
+    st.dataframe(table_rows, use_container_width=True, hide_index=True)
+
+    options = [_predictive_key(r) for r in filtered]
+    default_row = _default_predictive_selection(filtered)
+    default_index = options.index(_predictive_key(default_row)) if default_row else 0
+    selected_key = st.selectbox(
+        "View predictive warning details",
+        options=options,
+        index=default_index,
+        format_func=lambda key: _predictive_label(next(r for r in filtered if _predictive_key(r) == key)),
+        key="predictive_warning_select",
+    )
+    selected = sd.forecasted_stockout_detail(filtered, *selected_key.split("|"))
+    if selected:
+        _render_predictive_detail(owner_conn, selected)
+
+
+def _render_predictive_detail(owner_conn, risk):
+    st.divider()
+    st.markdown("### Predictive Early Warning")
+    st.warning("Forecast-based early warning — not confirmed demand.")
+
+    c1, c2 = st.columns(2)
+    c1.metric("Part", f"{risk['PART_ID']} — {risk.get('PART_DESCRIPTION') or '—'}")
+    c2.metric("Plant", f"{risk.get('PLANT_NAME') or risk['PLANT_ID']} — {risk['PLANT_ID']}")
+    st.caption(
+        "Current status: no confirmed shortage is currently detected for this Part + Plant "
+        "(confirmed Risk Radar always takes precedence and is checked before this warning is shown)."
+    )
+
+    m = st.columns(4)
+    m[0].metric("Current usable inventory", _fmt_qty(risk.get("CURRENT_USABLE_QUANTITY")))
+    m[1].metric("Confirmed 14-day demand", _fmt_qty(risk.get("CONFIRMED_DEMAND_QUANTITY")))
+    m[2].metric("Forecast 14-day demand", _fmt_qty(risk.get("FORECAST_DEMAND_QUANTITY")))
+    m[3].metric("Expected inbound", _fmt_qty(risk.get("EXPECTED_INBOUND_QUANTITY")))
+
+    m2 = st.columns(3)
+    m2[0].metric("Forecasted shortage", _fmt_qty(risk.get("FORECASTED_SHORTAGE_QUANTITY")))
+    m2[1].metric("Predicted stockout", str(risk.get("PREDICTED_STOCKOUT_DATE") or "—"))
+    m2[2].metric("Days to stockout", risk.get("DAYS_TO_PREDICTED_STOCKOUT"))
+
+    smape = risk.get("SMAPE")
+    st.caption(
+        f"Forecast model quality: SMAPE {smape * 100:.1f}%" if isinstance(smape, Number)
+        else "Forecast model quality: unavailable"
+    )
+
+    st.info(
+        "Confirmed demand represents known open customer orders. Forecast demand estimates total expected demand "
+        "based on historical patterns. The two values are not added together."
+    )
+
+    st.markdown("#### Why this warning exists")
+    usable = risk.get("CURRENT_USABLE_QUANTITY") or 0
+    inbound = risk.get("EXPECTED_INBOUND_QUANTITY") or 0
+    forecast_demand = risk.get("FORECAST_DEMAND_QUANTITY") or 0
+    s1, s2, s3 = st.columns(3)
+    s1.metric("Projected supply (usable + inbound)", _fmt_qty(usable + inbound))
+    s2.metric("Forecast demand (14d)", _fmt_qty(forecast_demand))
+    s3.metric("Gap", _fmt_qty(risk.get("FORECASTED_SHORTAGE_QUANTITY")))
+
+    try:
+        path_records = sd.forecast_path(owner_conn, risk["PART_ID"], risk["PLANT_ID"]).to_dict("records")
+    except Exception as exc:
+        st.warning("Could not load the daily forecast trajectory.")
+        with st.expander("Technical details"):
+            st.exception(exc)
+        path_records = []
+
+    if path_records:
+        st.markdown("#### 14-day forecast trajectory")
+        st.line_chart(
+            {
+                "Date": [str(r["FORECAST_DATE"]) for r in path_records],
+                "Forecast demand": [r["FORECAST_VALUE"] for r in path_records],
+            },
+            x="Date",
+            y="Forecast demand",
+            height=260,
+        )
+
+        stockout_date = risk.get("PREDICTED_STOCKOUT_DATE")
+        day_row = next((r for r in path_records if str(r["FORECAST_DATE"]) == str(stockout_date)), None) if stockout_date else None
+        if day_row:
+            st.markdown("#### Forecast on predicted stockout date")
+            d1, d2, d3 = st.columns(3)
+            d1.metric("Predicted demand that day", _fmt_qty(day_row.get("FORECAST_VALUE")))
+            d2.metric("Lower bound", _fmt_qty(day_row.get("LOWER_BOUND")))
+            d3.metric("Upper bound", _fmt_qty(day_row.get("UPPER_BOUND")))
+            st.caption(
+                "Prediction interval shown is Snowflake ML's single-day forecast bound for the predicted "
+                "stockout date only — it is not a summed 14-day confidence interval."
+            )
+
+    st.info(
+        "Predictive warnings are currently intended for early investigation and planning. "
+        "Intervention evaluation remains available for confirmed operational risks."
     )
